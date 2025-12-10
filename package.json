@@ -1,12 +1,37 @@
 {
-  "name": "my-expo-app",
+  "name": "cityzen",
+  "private": true,
   "version": "1.0.0",
-  "main": "node_modules/expo/AppEntry.js",
-  "scripts": { "start": "expo start" },
+  "type": "module",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:web": "vite build"
+  },
   "dependencies": {
-    "expo": "^51.0.0",
-    "react": "18.2.0",
-    "react-native": "0.74.0",
-    "firebase": "^11.0.0"
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/native-stack": "^6.9.17",
+    "@react-navigation/bottom-tabs": "^6.5.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-native": "^0.73.0",
+    "react-native-web": "^0.19.11",
+    "react-native-screens": "^3.27.0",
+    "react-native-safe-area-context": "^4.7.4",
+    "react-native-gesture-handler": "^2.14.1",
+    "lucide-react": "latest",
+    "expo": "^49.0.0",
+    "expo-status-bar": "^1.4.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "@react-native-community/cli": "^12.0.0",
+    "vite": "^5.1.0",
+    "expo-cli": "^7.0.0"
   }
 }

@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { View, Text, Image, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import Navigation from './Navigation';
 import BottomNav from './BottomNav';
-import { Search, Filter, MapPin, Heart, Calendar } from 'lucide-react';
+import { Search, Filter, MapPin, Heart, Calendar } from 'lucide-react-native'; 
 
 export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, navigation }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -17,7 +17,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Roads & Infrastructure',
       area: 'Ward 3 - South District',
       status: 'In Progress',
-      image: 'https://images.unsplash.com/photo-1709934730506-fba12664d4e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwb3Rob2xlJTIwcm9hZCUyMGRhbWFnZXxlbnwxfHx8fDE3NjUwNTI3NDJ8MA&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1709934730506-fba12664d4e4?w=1080',
       upvotes: 24,
       date: '2 days ago'
     },
@@ -27,7 +27,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Waste Management',
       area: 'Ward 1 - Central',
       status: 'Pending',
-      image: 'https://images.unsplash.com/photo-1580767114670-c778cc443675?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnYXJiYWdlJTIwd2FzdGUlMjBzdHJlZXR8ZW58MXx8fHwxNzY1MTE0MDk4fDA&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1580767114670-c778cc443675?w=1080',
       upvotes: 18,
       date: '3 days ago'
     },
@@ -37,7 +37,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Street Lights',
       area: 'Ward 2 - North',
       status: 'Resolved',
-      image: 'https://images.unsplash.com/photo-1685992830281-2eef1f9bd3e8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxicm9rZW4lMjBzdHJlZXRsaWdodCUyMG5pZ2h0fGVufDF8fHx8MTc2NTExNDA5OHww&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1685992830281-2eef1f9bd3e8?w=1080',
       upvotes: 12,
       date: '5 days ago'
     },
@@ -47,7 +47,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Water Supply',
       area: 'Ward 4 - East',
       status: 'In Review',
-      image: 'https://images.unsplash.com/photo-1720889589894-497c4f4f569e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3YXRlciUyMGxlYWslMjBwaXBlfGVufDF8fHx8MTc2NTExNDA5OHww&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1720889589894-497c4f4f569e?w=1080',
       upvotes: 31,
       date: '1 week ago'
     },
@@ -57,7 +57,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Drainage',
       area: 'Ward 5 - West',
       status: 'In Progress',
-      image: 'https://images.unsplash.com/photo-1580767114670-c778cc443675?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnYXJiYWdlJTIwd2FzdGUlMjBzdHJlZXR8ZW58MXx8fHwxNzY1MTE0MDk4fDA&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1580767114670-c778cc443675?w=1080',
       upvotes: 15,
       date: '1 week ago'
     },
@@ -67,7 +67,7 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
       category: 'Parks & Recreation',
       area: 'Ward 3 - South District',
       status: 'Pending',
-      image: 'https://images.unsplash.com/photo-1709934730506-fba12664d4e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwb3Rob2xlJTIwcm9hZCUyMGRhbWFnZXxlbnwxfHx8fDE3NjUwNTI3NDJ8MA&ixlib=rb-4.1.0&q=80&w=1080',
+      image: 'https://images.unsplash.com/photo-1709934730506-fba12664d4e4?w=1080',
       upvotes: 8,
       date: '2 weeks ago'
     }
@@ -78,173 +78,175 @@ export default function ComplaintsFeed({ onLogout, darkMode, toggleDarkMode, nav
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'Pending':
-        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-      case 'In Review':
-        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
-      case 'In Progress':
-        return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-      case 'Resolved':
-        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-      default:
-        return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+      case 'Pending': return 'bg-red-100';
+      case 'In Review': return 'bg-yellow-100';
+      case 'In Progress': return 'bg-orange-100';
+      case 'Resolved': return 'bg-green-100';
+      default: return 'bg-gray-100';
+    }
+  };
+
+  const getStatusTextColor = (status) => {
+    switch (status) {
+      case 'Pending': return 'text-red-700';
+      case 'In Review': return 'text-yellow-700';
+      case 'In Progress': return 'text-orange-700';
+      case 'Resolved': return 'text-green-700';
+      default: return 'text-gray-700';
     }
   };
 
   const filteredComplaints = complaints.filter(complaint => {
     const matchesSearch = complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         complaint.area.toLowerCase().includes(searchTerm.toLowerCase());
+                          complaint.area.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || complaint.category === selectedCategory;
     const matchesStatus = selectedStatus === 'All' || complaint.status === selectedStatus;
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
+    <View className={`flex-1 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
       
-      <div className="max-w-7xl mx-auto px-4 py-8 pb-24 md:pb-8">
-        <div className="mb-6">
-          <h1 className="text-3xl mb-2 text-gray-800 dark:text-white">Complaints Feed</h1>
-          <p className="text-gray-600 dark:text-gray-400">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+        <View className="mb-6">
+          <Text className={`text-3xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Complaints Feed</Text>
+          <Text className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             Browse all reported issues in your city
-          </p>
-        </div>
+          </Text>
+        </View>
 
         {/* Search and Filters */}
-        <div className="mb-6 space-y-4">
+        <View className="mb-6">
           {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
+          <View className={`flex-row items-center border rounded-lg px-3 py-2 mb-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`}>
+            <Search size={20} color={darkMode ? '#9CA3AF' : '#9CA3AF'} />
+            <TextInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#1E88E5] focus:border-transparent outline-none transition bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              onChangeText={setSearchTerm}
               placeholder="Search by category or location..."
+              placeholderTextColor={darkMode ? '#9CA3AF' : '#6B7280'}
+              className={`flex-1 ml-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}
             />
-          </div>
+          </View>
 
           {/* Filter Toggle */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-gray-700 dark:text-gray-300"
+          <TouchableOpacity
+            onPress={() => setShowFilters(!showFilters)}
+            className={`flex-row items-center self-start px-4 py-2 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`}
           >
-            <Filter className="w-5 h-5" />
-            Filters
-          </button>
+            <Filter size={20} color={darkMode ? '#D1D5DB' : '#374151'} />
+            <Text className={`ml-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Filters</Text>
+          </TouchableOpacity>
 
           {/* Filter Options */}
           {showFilters && (
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
-              <div>
-                <label className="block text-sm mb-2 text-gray-700 dark:text-gray-300">Category</label>
-                <div className="flex flex-wrap gap-2">
-                  {categories.map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedCategory(category)}
-                      className={`px-3 py-1 rounded-full text-sm transition ${
-                        selectedCategory === category
-                          ? 'bg-[#1E88E5] text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <View className={`mt-4 p-4 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <Text className={`text-sm mb-2 font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Category</Text>
+              <View className="flex-row flex-wrap gap-2 mb-4">
+                {categories.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    onPress={() => setSelectedCategory(category)}
+                    className={`px-3 py-1 rounded-full ${
+                      selectedCategory === category
+                        ? 'bg-[#1E88E5]'
+                        : (darkMode ? 'bg-gray-700' : 'bg-gray-100')
+                    }`}
+                  >
+                    <Text className={`text-xs ${selectedCategory === category ? 'text-white' : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}>
+                        {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-              <div>
-                <label className="block text-sm mb-2 text-gray-700 dark:text-gray-300">Status</label>
-                <div className="flex flex-wrap gap-2">
-                  {statuses.map((status) => (
-                    <button
-                      key={status}
-                      onClick={() => setSelectedStatus(status)}
-                      className={`px-3 py-1 rounded-full text-sm transition ${
-                        selectedStatus === status
-                          ? 'bg-[#1E88E5] text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {status}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+              <Text className={`text-sm mb-2 font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Status</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {statuses.map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    onPress={() => setSelectedStatus(status)}
+                    className={`px-3 py-1 rounded-full ${
+                      selectedStatus === status
+                        ? 'bg-[#1E88E5]'
+                        : (darkMode ? 'bg-gray-700' : 'bg-gray-100')
+                    }`}
+                  >
+                     <Text className={`text-xs ${selectedStatus === status ? 'text-white' : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}>
+                        {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           )}
-        </div>
+        </View>
 
         {/* Results Count */}
-        <div className="mb-4 text-gray-600 dark:text-gray-400">
+        <Text className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
           Showing {filteredComplaints.length} complaint{filteredComplaints.length !== 1 ? 's' : ''}
-        </div>
+        </Text>
 
         {/* Complaints Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <View className="gap-6">
           {filteredComplaints.map((complaint) => (
-            <div
+            <TouchableOpacity
               key={complaint.id}
-              role="button"
-              onClick={() => (navigation?.navigate ? navigation.navigate('Complaint', { id: complaint.id }) : (window.location.href = `/complaint/${complaint.id}`))}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition overflow-hidden border border-gray-200 dark:border-gray-700 group"
+              onPress={() => navigation?.navigate('Complaint', { id: complaint.id })}
+              className={`rounded-xl shadow-md overflow-hidden border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
             >
               {/* Image */}
-              <div className="relative h-48 overflow-hidden">
-                <img
-                  src={complaint.image}
-                  alt={complaint.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+              <View className="h-48 relative">
+                <Image
+                  source={{ uri: complaint.image }}
+                  className="w-full h-full"
+                  resizeMode="cover"
                 />
-                <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs ${getStatusColor(complaint.status)}`}>
-                  {complaint.status}
-                </div>
-              </div>
+                <View className={`absolute top-3 right-3 px-3 py-1 rounded-full ${getStatusColor(complaint.status)}`}>
+                  <Text className={`text-xs font-bold ${getStatusTextColor(complaint.status)}`}>{complaint.status}</Text>
+                </View>
+              </View>
 
               {/* Content */}
-              <div className="p-4">
-                <h3 className="text-lg mb-2 text-gray-800 dark:text-white group-hover:text-[#1E88E5] transition">
+              <View className="p-4">
+                <Text className={`text-lg font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                   {complaint.title}
-                </h3>
+                </Text>
 
-                <div className="space-y-2 mb-3">
-                  <div className="inline-block px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-[#1E88E5] rounded-full text-sm">
-                    {complaint.category}
-                  </div>
-                </div>
+                <View className="self-start px-3 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-full mb-3">
+                   <Text className="text-[#1E88E5] text-xs">{complaint.category}</Text>
+                </View>
 
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  <MapPin className="w-4 h-4" />
-                  <span>{complaint.area}</span>
-                </div>
+                <View className="flex-row items-center gap-2 mb-2">
+                  <MapPin size={16} color={darkMode ? '#9CA3AF' : '#4B5563'} />
+                  <Text className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{complaint.area}</Text>
+                </View>
 
-                <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <Heart className="w-4 h-4" />
-                    <span className="text-sm">{complaint.upvotes} upvotes</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-500">
-                    <Calendar className="w-4 h-4" />
-                    <span>{complaint.date}</span>
-                  </div>
-                </div>
-              </div>
-            </Link>
+                <View className={`flex-row justify-between pt-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <View className="flex-row items-center gap-2">
+                    <Heart size={16} color={darkMode ? '#9CA3AF' : '#4B5563'} />
+                    <Text className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{complaint.upvotes} upvotes</Text>
+                  </View>
+                  <View className="flex-row items-center gap-1">
+                    <Calendar size={16} color={darkMode ? '#9CA3AF' : '#4B5563'} />
+                    <Text className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{complaint.date}</Text>
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
           ))}
-        </div>
+        </View>
 
         {/* No Results */}
         {filteredComplaints.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400 text-lg">No complaints found matching your criteria</p>
-          </div>
+          <View className="items-center py-12">
+            <Text className={`text-lg ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No complaints found matching your criteria</Text>
+          </View>
         )}
-      </div>
+      </ScrollView>
 
       <BottomNav navigation={navigation} />
-    </div>
+    </View>
   );
 }

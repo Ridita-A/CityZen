@@ -1,34 +1,171 @@
-import React from 'react';
-import { View, Text, TextInput, Button, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { 
+  View, Text, TextInput, TouchableOpacity, ScrollView, 
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator 
+} from 'react-native';
+import { Mail, Lock, Building2, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
 
-export default function LoginScreen({ navigation, route, onLogin }) {
-  const handlePress = () => {
-    if (typeof onLogin === 'function') {
-      onLogin('citizen');
+export default function LoginScreen({ navigation, onLogin }) {
+  const [role, setRole] = useState('citizen');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleLogin = () => {
+    // Basic Validation
+    if (!email || !password) {
+      setError('Please enter both email and password.');
       return;
     }
+    
+    setError(null);
+    setIsLoading(true);
 
-    // Fallback: attempt a reset if no handler provided
-    try {
-      navigation.reset({ index: 0, routes: [{ name: 'HomeTab' }] });
-    } catch (e) {
-      // If reset fails (no HomeTab in this navigator), just navigate to root
-      navigation.navigate('Login');
-    }
+    // Simulate API Call
+    setTimeout(() => {
+      setIsLoading(false);
+      // Hardcoded check for prototype
+      if (email.includes('error')) {
+        setError('Invalid credentials. Please try again.');
+      } else {
+        if (onLogin) onLogin(role);
+        // Correct navigation based on role
+        const targetScreen = role === 'admin' ? 'AdminDashboard' : 
+                             role === 'authority' ? 'AuthorityDashboard' : 'HomeScreen';
+        navigation.replace(targetScreen);
+      }
+    }, 1500);
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
-      <TextInput placeholder="Email" style={styles.input} />
-      <TextInput placeholder="Password" secureTextEntry style={styles.input} />
-      <Button title="Login" onPress={handlePress} />
-    </View>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: 'white' }}>
+        <View style={styles.header}>
+          <Building2 size={64} color="white" />
+          <Text style={styles.headerTitle}>CityZen</Text>
+          <Text style={styles.headerSubtitle}>Better City, Better Life</Text>
+        </View>
+
+        <View style={styles.formContainer}>
+          <Text style={styles.title}>Login</Text>
+
+          {/* Error Box */}
+          {error && (
+            <View style={styles.errorBox}>
+              <AlertCircle size={20} color="#B91C1C" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+          
+          {/* Role Selector */}
+          <View style={styles.roleContainer}>
+            {['citizen', 'authority', 'admin'].map((r) => (
+              <TouchableOpacity 
+                key={r} 
+                onPress={() => setRole(r)}
+                style={[styles.roleBtn, role === r && styles.roleBtnActive]}
+              >
+                <Text style={[styles.roleText, role === r && styles.roleTextActive]}>
+                  {r.charAt(0).toUpperCase() + r.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {role === 'citizen' && (
+            <Text style={styles.noteText}>
+              <Text style={{fontWeight: 'bold'}}>Note:</Text> Citizen identity remains hidden from other users.
+            </Text>
+          )}
+
+          {/* Inputs */}
+          <Text style={styles.label}>Email or Phone</Text>
+          <View style={styles.inputWrapper}>
+            <Mail size={20} color="#9CA3AF" />
+            <TextInput 
+              style={styles.input} 
+              placeholder="Enter email or phone" 
+              placeholderTextColor="#9CA3AF"
+              value={email} 
+              onChangeText={setEmail}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.inputWrapper}>
+            <Lock size={20} color="#9CA3AF" />
+            <TextInput 
+              style={styles.input} 
+              placeholder="Enter password" 
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry={!showPassword} 
+              value={password} 
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff size={20} color="#6B7280" /> : <Eye size={20} color="#6B7280" />}
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={() => console.log('Forgot')} style={{ alignSelf: 'flex-end', marginBottom: 24 }}>
+            <Text style={{ color: '#1E88E5', fontWeight: '500' }}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          {/* Login Button */}
+          <TouchableOpacity 
+            onPress={handleLogin} 
+            style={[styles.loginBtn, isLoading && styles.btnDisabled]}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.loginBtnText}>Login</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.line} />
+            <Text style={styles.dividerText}>Don't have an account?</Text>
+            <View style={styles.line} />
+          </View>
+
+          <TouchableOpacity onPress={() => navigation.navigate('Signup')} style={styles.secondaryBtn}>
+             <Text style={styles.secondaryBtnText}>Create an Account</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  title: { fontSize: 24, marginBottom: 16 },
-  input: { width: '100%', padding: 12, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, marginBottom: 12 },
+  header: { height: 240, backgroundColor: '#1E88E5', alignItems: 'center', justifyContent: 'center', borderBottomRightRadius: 40, borderBottomLeftRadius: 40 },
+  headerTitle: { fontSize: 36, fontWeight: 'bold', color: 'white', marginTop: 10 },
+  headerSubtitle: { color: '#BFDBFE', fontSize: 16 },
+  formContainer: { padding: 24, flex: 1 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', marginBottom: 20, textAlign: 'center' },
+  errorBox: { flexDirection: 'row', backgroundColor: '#FEE2E2', padding: 12, borderRadius: 8, marginBottom: 16, alignItems: 'center', gap: 8 },
+  errorText: { color: '#B91C1C', fontSize: 14 },
+  roleContainer: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 12, padding: 4, marginBottom: 12 },
+  roleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+  roleBtnActive: { backgroundColor: 'white', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2 },
+  roleText: { color: '#6B7280', fontWeight: '600', fontSize: 12 },
+  roleTextActive: { color: '#1E88E5', fontWeight: 'bold' },
+  noteText: { fontSize: 12, color: '#6B7280', marginBottom: 16, textAlign: 'center', fontStyle: 'italic' },
+  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, height: 52, marginBottom: 16 },
+  input: { flex: 1, marginLeft: 12, fontSize: 16, color: '#1F2937' },
+  loginBtn: { backgroundColor: '#1E88E5', borderRadius: 12, height: 56, alignItems: 'center', justifyContent: 'center', shadowColor: '#1E88E5', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  btnDisabled: { backgroundColor: '#93C5FD' },
+  loginBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
+  line: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  dividerText: { marginHorizontal: 10, color: '#9CA3AF' },
+  secondaryBtn: { borderWidth: 1, borderColor: '#1E88E5', borderRadius: 12, height: 56, alignItems: 'center', justifyContent: 'center' },
+  secondaryBtnText: { color: '#1E88E5', fontSize: 16, fontWeight: '600' }
 });

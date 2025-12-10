@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
 import { Bell, Moon, Sun, Building2, LogOut } from 'lucide-react-native';
 
 export default function Navigation({ onLogout, darkMode, toggleDarkMode, navigation }) {
@@ -38,7 +38,6 @@ export default function Navigation({ onLogout, darkMode, toggleDarkMode, navigat
 const styles = StyleSheet.create({
   headerContainer: {
     backgroundColor: '#fff',
-    // FIXED: Uses safe area padding + extra space
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 50, 
     paddingBottom: 16,
     paddingHorizontal: 16,

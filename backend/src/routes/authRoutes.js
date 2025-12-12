@@ -1,12 +1,13 @@
+// backend/src/routes/authRoutes.js
 const express = require('express');
 const router = express.Router();
-const { signup, login, verify } = require('../controllers/authController');
-const validateRequest = require('../middleware/validateRequest');
-const { signupRules, loginRules } = require('../utils/validators');
-const authMiddleware = require('../middleware/authMiddleware');
+const authController = require('../controllers/authController');
 
-router.post('/signup', signupRules(), validateRequest, signup);
-router.post('/login', loginRules(), validateRequest, login);
-router.get('/verify', authMiddleware, verify);
+// 1. SIGNUP: POST /api/auth/users
+router.post('/users', authController.registerProfile);
+
+// 2. LOGIN: GET /api/auth/users/:firebaseUid (NEW ROUTE)
+// Fetches the user's profile and role using the UID from successful Firebase login.
+router.get('/users/:firebaseUid', authController.getProfileByUid); 
 
 module.exports = router;

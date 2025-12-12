@@ -1,17 +1,8 @@
 const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-module.exports = (sequelize) => {
-  const Admin = sequelize.define('Admin', {
-    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-    fullName: { type: DataTypes.STRING },
-  }, {
-    tableName: 'admins',
-    underscored: true,
-  });
+const Admin = sequelize.define('Admin', {
+  // No additional fields needed
+});
 
-  Admin.associate = (models) => {
-    Admin.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
-  };
-
-  return Admin;
-};
+module.exports = Admin;

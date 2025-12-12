@@ -1,19 +1,27 @@
 import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, ScrollView, 
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator 
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert 
 } from 'react-native';
 import { Mail, Lock, Building2, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
 
-export default function LoginScreen({ navigation, onLogin }) {
-  const [role, setRole] = useState('citizen');
+// NEW IMPORTS for Firebase and API calls
+import axios from 'axios';
+import { auth } from '../config/firebase'; 
+import { signInWithEmailAndPassword } from 'firebase/auth';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+export default function LoginScreen({ navigation }) {
+  // NOTE: Role state is kept for UI only; actual login role is fetched from DB
+  const [role, setRole] = useState('citizen'); 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     // Basic Validation
     if (!email || !password) {
       setError('Please enter both email and password.');
@@ -23,20 +31,50 @@ export default function LoginScreen({ navigation, onLogin }) {
     setError(null);
     setIsLoading(true);
 
-    // Simulate API Call
-    setTimeout(() => {
-      setIsLoading(false);
-      // Hardcoded check for prototype
-      if (email.includes('error')) {
-        setError('Invalid credentials. Please try again.');
+    try {
+      // 1. Authenticate with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // 2. Fetch User Profile & Role from your Express Backend
+      const response = await axios.get(`${API_URL}/api/users/${firebaseUser.uid}`, {
+        headers: {
+          'bypass-tunnel-reminder': 'true', // CRITICAL: Localtunnel fix
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const userData = response.data; // This object contains the stored role, fullName, etc.
+
+      // 3. Navigation based on Role fetched from the database
+      // Check App.js for the exact screen names
+      if (userData.role === 'admin') {
+        // Navigates to <Stack.Screen name="AdminDashboard" />
+        navigation.replace('AdminDashboard');
+      } else if (userData.role === 'authority') {
+        // Navigates to <Stack.Screen name="AuthorityDashboard" />
+        navigation.replace('AuthorityDashboard');
       } else {
-        if (onLogin) onLogin(role);
-        // Correct navigation based on role
-        const targetScreen = role === 'admin' ? 'AdminDashboard' : 
-                             role === 'authority' ? 'AuthorityDashboard' : 'HomeScreen';
-        navigation.replace(targetScreen);
+        // ✅ FIX: Navigates to <Stack.Screen name="HomeScreen" />
+        navigation.replace('HomeScreen'); 
       }
-    }, 1500);
+
+    } catch (error) {
+      console.error('Login Error:', error);
+      let message = 'Login failed. Please check your credentials.';
+
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        message = 'Invalid email or password.';
+      } else if (error.message.includes('Network Error') || error.response === undefined) {
+        message = 'Server connection failed. Is your backend and Localtunnel running?';
+      } else if (error.response && error.response.status === 404) {
+        message = 'User profile not found in database. Please contact support.';
+      }
+      
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -59,7 +97,7 @@ export default function LoginScreen({ navigation, onLogin }) {
             </View>
           )}
           
-          {/* Role Selector */}
+          {/* Role Selector (Kept for UI look, but not used for navigation) */}
           <View style={styles.roleContainer}>
             {['citizen', 'authority', 'admin'].map((r) => (
               <TouchableOpacity 
@@ -81,16 +119,17 @@ export default function LoginScreen({ navigation, onLogin }) {
           )}
 
           {/* Inputs */}
-          <Text style={styles.label}>Email or Phone</Text>
+          <Text style={styles.label}>Email</Text>
           <View style={styles.inputWrapper}>
             <Mail size={20} color="#9CA3AF" />
             <TextInput 
               style={styles.input} 
-              placeholder="Enter email or phone" 
+              placeholder="Enter email" 
               placeholderTextColor="#9CA3AF"
               value={email} 
               onChangeText={setEmail}
               autoCapitalize="none"
+              keyboardType="email-address"
             />
           </View>
 
@@ -116,7 +155,7 @@ export default function LoginScreen({ navigation, onLogin }) {
 
           {/* Login Button */}
           <TouchableOpacity 
-            onPress={handleLogin} 
+            onPress={handleLogin}
             style={[styles.loginBtn, isLoading && styles.btnDisabled]}
             disabled={isLoading}
           >

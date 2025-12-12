@@ -8,25 +8,24 @@ const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
 
+// CRITICAL CHANGE 1: Import sequelize from the models/index file
+// This ensures all User, Citizen, Authority, and Admin models are loaded with associations.
+const { sequelize } = require('./models'); 
 const logger = require('./utils/logger');
 const env = require('./config/env');
-const sequelize = require('./config/database');
-const initFirebase = require('./config/firebase');
+// REMOVED: const sequelize = require('./config/database'); // Redundant after CRITICAL CHANGE 1
+// REMOVED: const initFirebase = require('./config/firebase'); // Not needed for this client-auth flow
 
 const authRoutes = require('./routes/authRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
 async function startServer() {
 	// -------------------------------
-	// Initialize Firebase
+	// Initialize Firebase (REMOVED)
+	// The Firebase client SDK logic is now handled entirely on the frontend (SignupScreen.js)
+	// The Firebase Admin SDK is not strictly required for this specific registration flow.
 	// -------------------------------
-	try {
-		initFirebase();
-		logger.info("Firebase initialized successfully");
-	} catch (err) {
-		logger.error("Firebase initialization failed:", err.message);
-	}
-
+	
 	// -------------------------------
 	// Test database connection
 	// -------------------------------
@@ -34,7 +33,9 @@ async function startServer() {
 		await sequelize.authenticate();
 		logger.info("Database connection successful");
 
-		await sequelize.sync();
+		// CRITICAL CHANGE 2: Use { alter: true } to automatically create the new tables (User, Citizen, Authority, Admin)
+		// and their foreign key relationships when the server starts.
+		await sequelize.sync({ alter: true }); 
 		logger.info("Models synced");
 	} catch (err) {
 		logger.error("Database connection failed:", err.message);
@@ -59,7 +60,9 @@ async function startServer() {
 	});
 
 	// API Routes
-	app.use('/api/auth', authRoutes);
+    // CRITICAL CHANGE 3: Changed route mounting from '/api/auth' to '/api'
+    // This correctly maps the frontend call (POST /api/users) to the route defined in authRoutes.js
+	app.use('/api', authRoutes); 
 
 	// Static folder
 	app.use('/public', express.static(path.join(__dirname, 'public')));

@@ -1,15 +1,25 @@
 import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, ScrollView, 
-  StyleSheet, KeyboardAvoidingView, Platform, Alert 
+  StyleSheet, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator // NEW: Import for loading spinner
 } from 'react-native';
 import { User, Mail, Lock, MapPin, Building2, ShieldCheck, CheckSquare, Square, Briefcase, Key, CheckCircle } from 'lucide-react-native';
+
+// NEW IMPORTS for Firebase (JS SDK) and API calls
+import axios from 'axios';
+import { auth } from '../config/firebase'; // Ensure this path is correct: src/config/firebase.js
+import { createUserWithEmailAndPassword } from 'firebase/auth'; 
+
+// Access the API URL from your root .env file (Localtunnel URL)
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function SignupScreen({ navigation }) {
   const [step, setStep] = useState(1); // 1: Role, 2: Form, 3: Success
   const [role, setRole] = useState('citizen');
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false); // NEW: Loading state
 
   // Form Data
   const [formData, setFormData] = useState({
@@ -17,27 +27,93 @@ export default function SignupScreen({ navigation }) {
     ward: '', department: '', adminCode: ''
   });
 
+  // NEW: ASYNCHRONOUS HANDLER FUNCTION FOR SIGNUP
+  const handleSignUp = async () => {
+    // --- Validation Checks ---
+    if (!formData.email || !formData.password || !formData.fullName) {
+      Alert.alert('Missing Fields', 'Please fill in all required fields.');
+      return;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match.');
+      return;
+    }
+    if (!agreeTerms) {
+      Alert.alert('Terms', 'You must agree to the Terms & Privacy Policy.');
+      return;
+    }
+    
+    setLoading(true);
+
+    try {
+      // 1. FIREBASE AUTHENTICATION (Registers user)
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+      
+      const firebaseUser = userCredential.user;
+      
+      // 2. EXPRESS BACKEND API CALL (Creates profile in PostgreSQL)
+      const profileData = {
+        firebaseUid: firebaseUser.uid, // PASS THE UID TO BACKEND
+        role: role,
+        fullName: formData.fullName,
+        email: formData.email,
+        ward: formData.ward,
+        department: formData.department,
+        adminCode: formData.adminCode,
+      };
+
+      // Calls your Express API via your Localtunnel URL: POST ${API_URL}/api/users
+      const response = await axios.post(`${API_URL}/api/users`, profileData, {
+          // 👇 CRITICAL FIX: Add headers to bypass Localtunnel password prompt
+          headers: {
+              'Content-Type': 'application/json',
+              'bypass-tunnel-reminder': 'true' 
+          }
+      });
+      
+      if (response.status === 201) {
+        setStep(3); // Move to success screen
+      } else {
+        // This block might catch a non-201 success but still show an issue (rare)
+        Alert.alert('Error', 'Sign up succeeded, but profile creation failed.');
+      }
+
+    } catch (error) {
+      // Handle Firebase and Backend Errors
+      let errorMessage = 'An unexpected error occurred.';
+
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'That email address is already in use!';
+      } else if (error.message.includes('Network Error') || error.response === undefined) {
+        // If error.response is undefined, it's a connection issue (Localtunnel down or blocked)
+        errorMessage = 'Connection failed. Is your Localtunnel and Express server running?';
+      } else if (error.response && error.response.data && error.response.data.message) {
+        // This catches custom error messages from your backend (e.g., Invalid Admin Code, validation errors)
+        errorMessage = error.response.data.message;
+      }
+      
+      console.error('Signup Error:', error);
+      Alert.alert('Sign Up Error', errorMessage);
+
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const handleNext = () => {
     if (step === 1) {
       setStep(2);
     } else if (step === 2) {
-      // Simple Validation
-      if (!formData.email || !formData.password) {
-        Alert.alert('Missing Fields', 'Please fill in all required fields');
-        return;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        Alert.alert('Error', 'Passwords do not match');
-        return;
-      }
-      if (!agreeTerms) {
-        Alert.alert('Terms', 'You must agree to the Terms & Privacy Policy');
-        return;
-      }
-      // Simulate API call success
-      setStep(3);
+      // Call the real sign-up function instead of simulation
+      handleSignUp();
     }
   };
+
 
   const renderRoleSelection = () => (
     <View>
@@ -106,11 +182,15 @@ export default function SignupScreen({ navigation }) {
         <Text style={styles.checkboxText}>I agree to the Terms & Privacy Policy</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={handleNext} style={styles.submitBtn}>
-        <Text style={styles.submitBtnText}>Sign Up</Text>
+      <TouchableOpacity onPress={handleNext} style={styles.submitBtn} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="white" /> // Show spinner when loading
+        ) : (
+          <Text style={styles.submitBtnText}>Sign Up</Text>
+        )}
       </TouchableOpacity>
       
-      <TouchableOpacity onPress={() => setStep(1)} style={{alignItems: 'center', marginTop: 16}}>
+      <TouchableOpacity onPress={() => setStep(1)} style={{alignItems: 'center', marginTop: 16}} disabled={loading}>
         <Text style={{color: '#6B7280'}}>Back to Role Selection</Text>
       </TouchableOpacity>
     </View>
@@ -141,7 +221,7 @@ export default function SignupScreen({ navigation }) {
         {step === 3 && renderSuccess()}
 
         {step !== 3 && (
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.loginLink}>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.loginLink} disabled={loading}>
             <Text style={{ color: '#6B7280' }}>Already have an account? <Text style={{ color: '#1E88E5', fontWeight: 'bold' }}>Log in</Text></Text>
           </TouchableOpacity>
         )}

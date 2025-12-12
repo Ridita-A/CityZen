@@ -1,40 +1,73 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { User } = require('../models');
-const env = require('../config/env');
+// backend/src/controllers/authController.js
+const { User, Citizen, Authority, Admin, sequelize } = require('../models');
 
-async function signup(req, res, next) {
+// Read the secret key from the backend/.env file
+const ADMIN_CODE_SECRET = process.env.ADMIN_CODE_SECRET;
+
+// 1. SIGNUP Logic (Existing)
+exports.registerProfile = async (req, res) => {
+  // Use a transaction to prevent partial data creation
+  const t = await sequelize.transaction();
   try {
-    const { email, password, role, fullName } = req.body;
-    const existing = await User.findOne({ where: { email } });
-    if (existing) return res.status(400).json({ success: false, message: 'Email already in use' });
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, passwordHash, role, fullName });
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpire });
-    return res.json({ success: true, message: 'Account created successfully', data: { user, token } });
-  } catch (e) { next(e); }
-}
+    const { firebaseUid, email, fullName, role, ward, department, adminCode } = req.body;
 
-async function login(req, res, next) {
+    if (!firebaseUid || !email || !fullName || !role) {
+      return res.status(400).json({ message: 'Missing core identity fields.' });
+    }
+    
+    // 1. Create the base User
+    const user = await User.create({ firebaseUid, email, fullName, role }, { transaction: t });
+
+    // 2. Create role-specific profile based on the role submitted from the form
+    if (role === 'citizen') {
+      if (!ward) throw new Error('Citizen signup requires a Ward/Area.');
+      await Citizen.create({ UserFirebaseUid: firebaseUid, ward }, { transaction: t });
+    } else if (role === 'authority') {
+      if (!department || !ward) throw new Error('Authority requires Department and Ward.');
+      await Authority.create({ UserFirebaseUid: firebaseUid, department, ward }, { transaction: t });
+    } else if (role === 'admin') {
+      // Security Check: Only allow if the client code matches the server secret
+      if (adminCode !== ADMIN_CODE_SECRET || !ADMIN_CODE_SECRET) {
+        throw new Error('Invalid Admin Code provided.'); 
+      }
+      await Admin.create({ UserFirebaseUid: firebaseUid }, { transaction: t });
+    }
+
+    // Commit the transaction
+    await t.commit();
+    res.status(201).json({ message: 'Profile created successfully', user });
+  } catch (error) {
+    // Rollback if any step failed (e.g., missing data, invalid Admin code, DB error)
+    await t.rollback();
+    
+    console.error('Registration Error:', error.message);
+    
+    // Send a 400 status with a specific error message back to the frontend
+    res.status(400).json({ message: `Profile creation failed: ${error.message}` });
+  }
+};
+
+// 2. LOGIN Logic (NEW)
+exports.getProfileByUid = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
-    const user = await User.findOne({ where: { email, role } });
-    if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    const match = await bcrypt.compare(password, user.passwordHash);
-    if (!match) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpire });
-    return res.json({ success: true, data: { user, token } });
-  } catch (e) { next(e); }
-}
+    const { firebaseUid } = req.params;
 
-async function verify(req, res, next) {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    const user = await User.findByPk(userId, { attributes: { exclude: ['passwordHash'] } });
-    if (!user) return res.status(404).json({ success: false, message: 'Not found' });
-    return res.json({ success: true, user });
-  } catch (e) { next(e); }
-}
+    // Find the user in the PostgreSQL database using the UID obtained from Firebase login
+    const user = await User.findOne({ 
+      where: { firebaseUid },
+      // FIX: Removed 'id' to fix the "column id does not exist" error.
+      attributes: ['firebaseUid', 'email', 'fullName', 'role', 'createdAt']
+    });
 
-module.exports = { signup, login, verify };
+    if (!user) {
+      return res.status(404).json({ message: 'User profile not found in database.' });
+    }
+
+    // Return the user object (containing the role, fullName, etc.)
+    res.json(user);
+  } catch (error) {
+    console.error('Fetch Profile Error:', error.message);
+    // Returning a 500 error is fine, but make sure the error message is clear for debugging
+    res.status(500).json({ message: 'Server error while fetching profile. Check database connection or column names.' });
+  }
+};

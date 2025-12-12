@@ -1,26 +1,44 @@
 const sequelize = require('../config/database');
-const fs = require('fs');
-const path = require('path');
+const User = require('./User');
+const Citizen = require('./Citizen');
+const Authority = require('./Authority');
+const Admin = require('./Admin');
 
-const db = {};
+// --- Define Associations (One-to-One) ---
 
-// Load models in the folder
-fs.readdirSync(__dirname)
-  .filter((file) => file !== 'index.js' && file.endsWith('.js'))
-  .forEach((file) => {
-    const modelDef = require(path.join(__dirname, file));
-    const model = modelDef(sequelize);
-    db[model.name] = model;
-  });
-
-// Run associations if defined
-Object.keys(db).forEach((modelName) => {
-  if (typeof db[modelName].associate === 'function') {
-    db[modelName].associate(db);
-  }
+// A User HAS ONE role-specific profile
+User.hasOne(Citizen, {
+  foreignKey: {
+    name: 'UserFirebaseUid',
+    allowNull: false
+  },
+  onDelete: 'CASCADE' 
 });
+Citizen.belongsTo(User);
 
-db.sequelize = sequelize;
-db.Sequelize = require('sequelize');
+User.hasOne(Authority, {
+  foreignKey: {
+    name: 'UserFirebaseUid',
+    allowNull: false
+  },
+  onDelete: 'CASCADE'
+});
+Authority.belongsTo(User);
 
-module.exports = db;
+User.hasOne(Admin, {
+  foreignKey: {
+    name: 'UserFirebaseUid',
+    allowNull: false
+  },
+  onDelete: 'CASCADE'
+});
+Admin.belongsTo(User);
+
+
+module.exports = {
+  sequelize,
+  User,
+  Citizen,
+  Authority,
+  Admin
+};

@@ -16,7 +16,7 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "expo": "^54.0.27",
+    "expo": "^54.0.29",
     "expo-status-bar": "~3.0.9",
     "express": "^5.2.1",
     "express-validator": "^7.3.1",

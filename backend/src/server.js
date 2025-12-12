@@ -1,7 +1,12 @@
+const path = require('path');
+require('dotenv').config();
+console.log('Loaded DATABASE_URL:', process.env.DATABASE_URL);
+
+
+
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
-const path = require('path');
 const logger = require('./utils/logger');
 const env = require('./config/env');
 const sequelize = require('./config/database');

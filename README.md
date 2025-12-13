@@ -1,4 +1,23 @@
-npm install --legacy-peer-deps
+1.
+cd backend
+npm install //first time or if new package added
+
+2.
+cd frontend
+npm install //first time or if new package added
+
+3.
+terminal 1
+cd backend
+npm run dev
+
+4.
+terminal 2
+lt --port 3000 --subdomain cityzen-api
+
+5.
+terminal 3
+cd frontend
 npx expo start
 
 //if there is a problem with lucid react

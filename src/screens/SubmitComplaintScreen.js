@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Activi
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
 
-import { Camera, Image as ImageIcon, MapPin, Sparkles, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, MapPin, Sparkles, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield, PlusIcon } from 'lucide-react-native';
 import * as ImagePicker from "expo-image-picker";
 import * as Location from 'expo-location';
 
@@ -13,7 +13,7 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [image, setImage] = useState(null);
+  const [image, setImage] = useState([]);
   const [privacyEnabled, setPrivacyEnabled] = useState(false);
   
   const [location, setLocation] = useState({ latitude: null, longitude: null, fullAddress: null,});
@@ -43,6 +43,15 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       alert('Permission to access camera is required!');
+      return false;
+    }
+    return true;
+  };
+
+  const requestLibraryPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      alert('Permission to access media library is required!');
       return false;
     }
     return true;
@@ -125,10 +134,37 @@ const updateLocationWithAddress = async (latitude, longitude) => {
       exif: true,
     });
 
-    // Camera
     if (result.assets?.length > 0) {
       const asset = result.assets[0];
-      setImage(asset.uri);
+      setImage(prev => [...prev, ...result.assets.map(a => a.uri)]);
+
+      const exifLocation = extractLocationFromExif(asset.exif);
+      if (exifLocation) {
+        await updateLocationWithAddress(exifLocation.latitude, exifLocation.longitude);
+        return;
+      }
+
+      const gps = await Location.getCurrentPositionAsync({});
+      await updateLocationWithAddress(gps.coords.latitude, gps.coords.longitude);
+    }
+  };
+
+  const handleLibraryPick = async () => {
+    const hasPermission = await requestLibraryPermission();
+    const locPerm = await requestLocationPermission();
+    if (!locPerm || !hasPermission) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: false,  
+      quality: 1,
+      allowsMultipleSelection: true,
+      exif: true, 
+    });
+
+    if (result.assets?.length > 0) {
+      const asset = result.assets[0];
+      setImage(prev => [...prev, ...result.assets.map(a => a.uri)]);
 
       const exifLocation = extractLocationFromExif(asset.exif);
       if (exifLocation) {
@@ -156,11 +192,9 @@ const updateLocationWithAddress = async (latitude, longitude) => {
     }
   };
 
-
-
   const handleSubmit = () => {
     const newErrors = {};
-    if (!image) newErrors.image = 'Evidence photo is mandatory.';
+    if (image.length === 0) newErrors.image = 'Evidence photo is mandatory.';
     if (!title) newErrors.title = 'Title is required.';
     if (!selectedCategory) newErrors.category = 'Category is required.';
     if (!location.latitude || !location.longitude) newErrors.location = 'GPS location is required.';
@@ -190,23 +224,32 @@ const updateLocationWithAddress = async (latitude, longitude) => {
            
            {/* 1. Image Upload (Mandatory) */}
            <Text style={[styles.label, darkMode && styles.textWhite]}>Evidence Photo <Text style={styles.req}>*</Text></Text>
-           {image ? (
-             <View style={styles.previewContainer}>
-               <Image source={{ uri: image }} style={styles.previewImage} resizeMode="cover" />
-               <TouchableOpacity onPress={() => setImage(null)} style={styles.removeImgBtn}>
+           {image.length > 0 && (
+             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {image.map((uri, index) => (
+                <View key={index} style={styles.previewContainer}>
+                <Image source={{ uri }} style={styles.previewImage} resizeMode="cover" />
+
+               <TouchableOpacity onPress={() => setImage(image.filter((_, i) => i !== index))} style={styles.removeImgBtn}>
                  <Trash2 size={16} color="white" />
                  <Text style={styles.removeImgText}>Remove</Text>
                </TouchableOpacity>
-             </View>
-           ) : (
+              </View>
+              ))}
+             </ScrollView>
+           )}
 
              <View style={styles.uploadRow}>
-               <TouchableOpacity onPress={() => handleImagePick()} style={[styles.uploadBtn, errors.image && styles.errorBorder]}>
-                 <Camera size={24} color="#1E88E5" />
-                 <Text style={styles.uploadText}>Camera</Text>
+              <TouchableOpacity onPress={handleImagePick} style={[styles.uploadBtn,image.length > 0 ? styles.uploadBtnSmall : null,errors.image && styles.errorBorder]}>
+                 <Camera size={image.length > 0 ? 18 : 24} color="#1E88E5" />
+                 <Text style={image.length > 0 ? styles.uploadTextSmall : styles.uploadText}>Camera</Text>
+               </TouchableOpacity>
+
+               <TouchableOpacity onPress={handleLibraryPick} style={[styles.uploadBtn,image.length > 0 ? styles.uploadBtnSmall : null,errors.image && styles.errorBorder]}>
+                 <ImageIcon size={image.length > 0 ? 18 : 24} color="#1E88E5" />
+                 <Text style={image.length > 0 ? styles.uploadTextSmall : styles.uploadText}>Gallery</Text>
                </TouchableOpacity>
              </View>
-           )}
            {errors.image && <Text style={styles.errorText}>{errors.image}</Text>}
 
            {/* AI Placeholder */}
@@ -360,10 +403,15 @@ const styles = StyleSheet.create({
   uploadRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   uploadBtn: { flex: 1, height: 80, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' },
   uploadText: { color: '#1E88E5', marginTop: 4, fontSize: 12, fontWeight: '600' },
-  previewContainer: { height: 180, borderRadius: 12, overflow: 'hidden', marginBottom: 12, position: 'relative' },
+  previewContainer: { width:270, height:180, borderRadius:12, overflow:'hidden', marginRight:12, position:'relative' },
   previewImage: { width: '100%', height: '100%' },
-  removeImgBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', flexDirection: 'row', padding: 6, borderRadius: 8, alignItems: 'center' },
-  removeImgText: { color: 'white', fontSize: 12, marginLeft: 4 },
+  uploadBtnSmall: { flex: 1, height: 40, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' }, 
+  uploadTextSmall: { color: '#1E88E5', marginTop: 4, fontSize: 10, fontWeight: '600' }, 
+
+  removeImgBtn: { position:'absolute', bottom:10, right:10, backgroundColor:'rgba(0,0,0,0.6)', flexDirection:'row', padding:6, borderRadius:8, alignItems:'center' },
+  removeImgText: { color:'white', fontSize:12, marginLeft:4 },
+  addImgBtn: { position:'absolute', bottom:10, right:90, backgroundColor:'rgba(0,0,0,0.6)', flexDirection:'row', padding:6, borderRadius:8, alignItems:'center' },
+  addImgText: { color:'white', fontSize:12, marginLeft:4, alignItems: 'center'  },
 
   aiBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F3E8FF', padding: 10, borderRadius: 8 },
   aiText: { fontSize: 12, color: '#9333EA', marginLeft: 8, fontWeight: '500' },

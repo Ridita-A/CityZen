@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Alert } from 'react-native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
@@ -6,13 +6,19 @@ import BottomNav from '../components/BottomNav';
 import { Camera, Image as ImageIcon, MapPin, Sparkles, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield } from 'lucide-react-native';
 import * as ImagePicker from "expo-image-picker";
 import * as Location from 'expo-location';
+import * as FileSystem from 'expo-file-system';
+import axios from 'axios';
+import { auth } from '../config/firebase';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 
 export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, toggleDarkMode }) {
   // Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null); // Changed to store object {id, name}
+  const [categories, setCategories] = useState([]); // New state for fetched categories
   const [image, setImage] = useState(null);
   const [privacyEnabled, setPrivacyEnabled] = useState(false);
   
@@ -27,11 +33,22 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const categories = [
-    'Roads & Highways', 'WASA (Water)', 'DESCO/DPDC (Power)', 
-    'Waste Management', 'Public Safety', 'Drainage', 'Others'
-  ];
-
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/api/complaints/categories`, {
+          headers: {
+            'bypass-tunnel-reminder': 'true'
+          }
+        });
+        setCategories(response.data);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        Alert.alert('Error', 'Failed to load categories.');
+      }
+    };
+    fetchCategories();
+  }, []);
 
   //Permissions
   const requestLocationPermission = async () => {
@@ -158,27 +175,69 @@ const updateLocationWithAddress = async (latitude, longitude) => {
 
 
 
-  const handleSubmit = () => {
-    const newErrors = {};
-    if (!image) newErrors.image = 'Evidence photo is mandatory.';
-    if (!title) newErrors.title = 'Title is required.';
-    if (!selectedCategory) newErrors.category = 'Category is required.';
-    if (!location.latitude || !location.longitude) newErrors.location = 'GPS location is required.';
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      Alert.alert('Missing Info', 'Please fill in all required fields.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      Alert.alert("Success", "Complaint Submitted Successfully!");
-      navigation.navigate('Feed');
-    }, 2000);
-  };
-
+      const handleSubmit = async () => {
+      const newErrors = {};
+      if (!image) newErrors.image = 'Evidence photo is mandatory.';
+      if (!title) newErrors.title = 'Title is required.';
+      if (!selectedCategory) newErrors.category = 'Category is required.';
+      if (!location.latitude || !location.longitude) newErrors.location = 'GPS location is required.';
+  
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        Alert.alert('Missing Info', 'Please fill in all required fields.');
+        return;
+      }
+  
+      setIsSubmitting(true);
+      setErrors({});
+  
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('description', description);
+      formData.append('latitude', location.latitude);
+      formData.append('longitude', location.longitude);
+      formData.append('citizenUid', auth.currentUser?.uid);
+      formData.append('categoryId', selectedCategory.id);
+  
+      if (!auth.currentUser?.uid) {
+        Alert.alert('Error', 'Could not identify user. Please log in again.');
+        setIsSubmitting(false);
+        return;
+      }
+  
+      if (image) {
+        const filename = image.split('/').pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image`;
+        formData.append('image', {
+          uri: image,
+          name: filename,
+          type: type,
+        });
+      }
+      
+      try {
+        const response = await axios.post(`${API_URL}/api/complaints`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data', // Explicitly set content type
+            'bypass-tunnel-reminder': 'true'
+          }
+        });
+  
+        if (response.status === 201) {
+          Alert.alert("Success", "Complaint Submitted Successfully!");
+          navigation.navigate('Feed');
+        } else {
+          Alert.alert('Error', 'Failed to submit complaint. Please try again.');
+        }
+      } catch (error) {
+        console.error('Submit Complaint Error:', error);
+        const message = error.response?.data?.message || 'An unexpected error occurred.';
+        Alert.alert('Submission Failed', message);
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
@@ -232,7 +291,7 @@ const updateLocationWithAddress = async (latitude, longitude) => {
              style={[styles.dropdownHeader, darkMode && styles.inputDark, errors.category && styles.errorBorder]}
            >
              <Text style={[styles.dropdownText, !selectedCategory && styles.placeholderText, darkMode && styles.textWhite]}>
-               {selectedCategory || "Select a Category"}
+               {selectedCategory ? selectedCategory.name : "Select a Category"}
              </Text>
              {isDropdownOpen ? <ChevronUp size={20} color="#6B7280" /> : <ChevronDown size={20} color="#6B7280" />}
            </TouchableOpacity>
@@ -241,11 +300,11 @@ const updateLocationWithAddress = async (latitude, longitude) => {
              <View style={[styles.dropdownList, darkMode && styles.cardDark]}>
                {categories.map((cat, index) => (
                  <TouchableOpacity 
-                   key={index} 
+                   key={cat.id} 
                    style={[styles.dropdownItem, darkMode && styles.dropdownItemDark]}
                    onPress={() => { setSelectedCategory(cat); setIsDropdownOpen(false); }}
                  >
-                   <Text style={[styles.dropdownItemText, darkMode && styles.textWhite]}>{cat}</Text>
+                   <Text style={[styles.dropdownItemText, darkMode && styles.textWhite]}>{cat.name}</Text>
                  </TouchableOpacity>
                ))}
              </View>

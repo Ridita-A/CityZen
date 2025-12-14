@@ -9,6 +9,7 @@ function initFirebase() {
       const serviceAccount = require(svcPath);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET_URL // Add this line
       });
       console.log('Firebase initialized');
       return admin;

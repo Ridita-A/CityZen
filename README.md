@@ -7,15 +7,22 @@ cd frontend
 npm install //first time or if new package added
 
 3.
+cd D:\your_directory\CityZen\ai-service
+venv\Scripts\activate
+uvicorn ai_service:app --host 0.0.0.0 --port 8000
+
+change in runAidetection
+
+4.
 terminal 1
 cd backend
 npm run dev
 
-4.
+5.
 terminal 2
 lt --port 3000 --subdomain cityzen-api
 
-5.
+6.
 terminal 3
 cd frontend
 npx expo start

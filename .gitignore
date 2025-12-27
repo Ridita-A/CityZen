@@ -10,3 +10,4 @@ backend/package-lock.json
 node_modules
 ai-service/__pycache__
 ai-service/venv
+Documentation/

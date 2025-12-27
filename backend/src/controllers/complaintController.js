@@ -98,7 +98,7 @@ exports.getCategories = async (req, res) => {
 
 exports.getRecommendedAuthorities = async (req, res) => {
   try {
-    const { category, description, latitude, longitude } = req.query;
+    const { category, description, latitude, longitude, location_string } = req.query;
 
     if (!category || !description || !latitude || !longitude) {
       return res.status(400).json({ message: 'Missing required query parameters.' });
@@ -108,15 +108,16 @@ exports.getRecommendedAuthorities = async (req, res) => {
       attributes: ['id', 'name']
     });
 
-    const geminiResponse = await axios.post('http://localhost:8001/recommend-authority', {
+    const openRouterResponse = await axios.post('http://localhost:8001/recommend-authority', {
       category,
       description,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
-      authorities: authorities.map(a => ({ id: a.id, name: a.name }))
+      authorities: authorities.map(a => ({ id: a.id, name: a.name })),
+      location_string
     });
 
-    const recommendation = geminiResponse.data;
+    const recommendation = openRouterResponse.data;
 
     const authority = await AuthorityCompany.findByPk(recommendation.authorityCompanyId, {
       attributes: ['name']

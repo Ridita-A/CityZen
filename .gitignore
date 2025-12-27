@@ -10,5 +10,5 @@ backend/package-lock.json
 node_modules
 ai-service/__pycache__
 ai-service/venv
-gemini-service/.env
-gemini-service/venv
+openrouter-service/.env
+openrouter-service/venv

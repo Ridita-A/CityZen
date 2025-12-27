@@ -6,12 +6,12 @@ import BottomNav from '../components/BottomNav';
 import { Camera, Image as ImageIcon, MapPin, Sparkles, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield } from 'lucide-react-native';
 import * as ImagePicker from "expo-image-picker";
 import * as Location from 'expo-location';
-import * as FileSystem from 'expo-file-system';
+// import * as FileSystem from 'expo-file-system';
 import axios from 'axios';
 import { auth } from '../config/firebase';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const GEMINI_API_URL = process.env.EXPO_PUBLIC_GEMINI_API_URL;
+const OPENROUTER_API_URL = process.env.EXPO_PUBLIC_OPENROUTER_API_URL;
 
 
 export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, toggleDarkMode, route }) {
@@ -99,6 +99,7 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
               description,
               latitude: location.latitude,
               longitude: location.longitude,
+              location_string: location.fullAddress,
             },
             headers: {
               'bypass-tunnel-reminder': 'true'
@@ -127,21 +128,22 @@ useEffect(() => {
     const generateComplaintText = async () => {
       if (aiResult && location.latitude && location.longitude) {
         try {
-          const geminiResponse = await axios.post(`${GEMINI_API_URL}/generate_complaint_text`, {
+          const response = await axios.post(`${OPENROUTER_API_URL}/generate_complaint_text`, {
             category: aiResult.label,
             confidence: aiResult.confidence,
             latitude: location.latitude,
             longitude: location.longitude,
+            location_string: location.fullAddress,
           });
 
-          if (geminiResponse.data.title) {
-            setTitle(geminiResponse.data.title);
+          if (response.data.title) {
+            setTitle(response.data.title);
           }
-          if (geminiResponse.data.description) {
-            setDescription(geminiResponse.data.description);
+          if (response.data.description) {
+            setDescription(response.data.description);
           }
-        } catch (geminiError) {
-          console.error("Error generating complaint text with Gemini:", geminiError);
+        } catch (error) {
+          console.error("Error generating complaint text with OpenRouter:", error);
           Alert.alert("Generation Failed", "Could not generate complaint details. Please check your connection or try again.");
         }
       }

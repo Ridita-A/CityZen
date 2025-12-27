@@ -38,13 +38,13 @@ venv\Scripts\activate
 uvicorn ai_service:app --host 0.0.0.0 --port 8000 
 
 4.
-cd gemini-service
+cd openrouter-service
 // if first time
 pip install -r requirements.txt
 python -m venv venv
 //
 venv\Scripts\activate
-uvicorn gemini_service:app --host 0.0.0.0 --port 8001
+uvicorn openrouter_service:app --host 0.0.0.0 --port 8001
 
 5.
 cd frontend

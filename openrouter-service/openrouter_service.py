@@ -23,18 +23,24 @@ client = OpenAI(
 app = FastAPI()
 
 def extract_json_from_response(text):
-    """Extracts a JSON object from a string, even if it's embedded in other text."""
+    """Extracts a JSON object or array from a string, even if it's embedded in other text."""
     try:
-        # Find the first '{' and the last '}'
-        start_index = text.find('{')
-        end_index = text.rfind('}')
-        
+        # Try to find array first
+        start_index = text.find('[')
+        end_index = text.rfind(']')
+
         if start_index != -1 and end_index != -1 and start_index < end_index:
-            # Extract the potential JSON string
             json_string = text[start_index:end_index+1]
             return json.loads(json_string)
         else:
-            return None
+            # Fallback to object if no array found
+            start_index = text.find('{')
+            end_index = text.rfind('}')
+            if start_index != -1 and end_index != -1 and start_index < end_index:
+                json_string = text[start_index:end_index+1]
+                return json.loads(json_string)
+            else:
+                return None
     except json.JSONDecodeError:
         return None
 
@@ -92,8 +98,8 @@ async def generate_complaint_text(request: GenerateComplaintTextRequest):
         f"AI Confidence: {request.confidence}%\n"
         f"Location: {location_info}\n\n"
         f"Rules:\n"
-        f"- Title should be engaging & informative for general public. Add general location info like 'seen in XYZ' - NO coordinates.\n"
-        f"- Description should be simple & colloquial and summarize the issue, its severity & hazards.\n"
+        f"- Title should be engaging & informative for general public. Add general location info - NO coordinates.\n"
+        f"- Description should be simple and summarize the issue, its severity & hazards.\n"
         f"- If detected category is ambiguous, give a generic description.\n"
         f"- Return ONLY valid JSON.\n\n"
         f"Output format:\n"
@@ -138,7 +144,7 @@ async def recommend_authority(request: RecommendationRequest):
 
     prompt = (
         f"You are an AI civic issue routing assistant for Dhaka city.\n\n"
-        f"Select the most appropriate authority from the list below, based on complaint location and issue type.\n"
+        f"Select the most appropriate authority/authorities from the list below, based on complaint location (check south vs north Dhaka) and issue type.\n"
         f"Return ONLY valid JSON.\n\n"
         f"Authorities:\n"
         f"{authorities_list_str}\n\n"
@@ -147,16 +153,17 @@ async def recommend_authority(request: RecommendationRequest):
         f"Description: {request.description}\n"
         f"Location: {location_info}\n\n"
         f"Rules:\n"
-        f"- Choose exactly one authority\n"
-        f"- Do NOT invent authorities\n"
+        f"- Do NOT invent or add authorities\n"
         f"- Include a confidence score between 0 and 1\n"
         f"- JSON ONLY (no markdown, no text)\n\n"
         f"Output format:\n"
+        f"["
         f"{{\n"
         f"  \"authorityCompanyId\": number,\n"
         f"  \"confidence\": number,\n"
         f"  \"reason\": string\n"
         f"}}"
+        f"]"
     )
     try:
         print("-----PROMPT-----")

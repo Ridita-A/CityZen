@@ -1,12 +1,5 @@
-const {
-  Complaint,
-  Category,
-  ComplaintImages,
-  AuthorityCompany,
-  sequelize
-} = require('../models');
-
-const supabase = require('../config/supabase');
+const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, sequelize } = require('../models');
+const supabase = require('../config/supabase'); // Import Supabase client
 const axios = require('axios');
 
 /* =========================
@@ -84,6 +77,19 @@ exports.createComplaint = async (req, res) => {
         },
         { transaction: t }
       );
+    }
+
+    const { chosenAuthorities } = req.body;
+    if (chosenAuthorities) {
+      const authorityIds = JSON.parse(chosenAuthorities);
+      if (Array.isArray(authorityIds) && authorityIds.length > 0) {
+        for (const authorityId of authorityIds) {
+          await ComplaintAssignment.create({
+            complaintId: complaint.id,
+            authorityCompanyId: authorityId,
+          }, { transaction: t });
+        }
+      }
     }
 
     await t.commit();
@@ -331,42 +337,22 @@ exports.getRecommendedAuthorities = async (req, res) => {
       location_string,
     } = req.query;
 
-    if (!category || !description || !latitude || !longitude) {
-      return res.status(400).json({
-        message: 'Missing required query parameters.',
-      });
-    }
+    const recommendations = openRouterResponse.data;
 
-    const authorities = await AuthorityCompany.findAll({
-      attributes: ['id', 'name'],
-    });
-
-    const response = await axios.post(
-      'http://localhost:8001/recommend-authority',
-      {
-        category,
-        description,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        authorities: authorities.map(a => ({
-          id: a.id,
-          name: a.name,
-        })),
-        location_string,
-      }
+    const enrichedRecommendations = await Promise.all(
+      recommendations.map(async (rec) => {
+        const authority = await AuthorityCompany.findByPk(rec.authorityCompanyId, {
+          attributes: ['name']
+        });
+        return {
+          ...rec,
+          authorityName: authority ? authority.name : 'Unknown Authority'
+        };
+      })
     );
 
-    const recommendation = response.data;
+    res.status(200).json(enrichedRecommendations);
 
-    const authority = await AuthorityCompany.findByPk(
-      recommendation.authorityCompanyId,
-      { attributes: ['name'] }
-    );
-
-    res.status(200).json({
-      ...recommendation,
-      authorityName: authority ? authority.name : 'Unknown Authority',
-    });
   } catch (error) {
     console.error('Get Recommended Authorities Error:', error.message);
     res.status(500).json({

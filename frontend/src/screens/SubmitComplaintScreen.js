@@ -54,8 +54,19 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const [recommendedAuthority, setRecommendedAuthority] = useState(null);
+  const [recommendedAuthorities, setRecommendedAuthorities] = useState([]);
+  const [chosenAuthorities, setChosenAuthorities] = useState([]);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+
+  const handleChooseAuthority = (authorityId) => {
+    setChosenAuthorities(prev => {
+      if (prev.includes(authorityId)) {
+        return prev.filter(id => id !== authorityId); // Deselect
+      } else {
+        return [...prev, authorityId]; // Select
+      }
+    });
+  };
 
 
 
@@ -106,7 +117,7 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
               'bypass-tunnel-reminder': 'true'
             }
           });
-          setRecommendedAuthority(response.data);
+          setRecommendedAuthorities(response.data);
         } catch (error) {
           console.error('Error fetching recommended authority:', error);
         } finally {
@@ -127,7 +138,7 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
 
 useEffect(() => {
     const generateComplaintText = async () => {
-      if (aiResult && location.latitude && location.longitude) {
+      if (aiResult && aiResult.confidence > 60 && location.latitude && location.longitude) {
         try {
           const response = await axios.post(`${OPENROUTER_API_URL}/generate_complaint_text`, {
             category: aiResult.label,
@@ -211,7 +222,7 @@ const updateLocationWithAddress = async (latitude, longitude) => {
   setLocating(true);
 
   try {
-    const [addr] = await Location.reverseGeocodeAsync({ latitude, longitude });
+    const [addr] = await Location.reverseGeocodeAsync({ latitude, longitude, localeIdentifier: 'en-US' });
 
     const areaName = addr.name || addr.street || addr.subregion || addr.city || 'Unknown area';
     const district = addr.district || addr.city || '';
@@ -380,6 +391,7 @@ const updateLocationWithAddress = async (latitude, longitude) => {
       formData.append('longitude', location.longitude);
       formData.append('citizenUid', auth.currentUser?.uid);
       formData.append('categoryId', selectedCategory.id);
+      formData.append('chosenAuthorities', JSON.stringify(chosenAuthorities));
   
       if (!auth.currentUser?.uid) {
         Alert.alert('Error', 'Could not identify user. Please log in again.');
@@ -556,22 +568,33 @@ const updateLocationWithAddress = async (latitude, longitude) => {
              onChangeText={setDescription}
            />
 
-           {/* AI Recommended Authority */}
+           {/* AI Recommended Authorities */}
            {loadingRecommendation && <ActivityIndicator style={{ marginVertical: 16 }} color="#1E88E5" />}
-           {recommendedAuthority && (
+           {recommendedAuthorities.length > 0 && (
              <View style={{ marginTop: 16 }}>
-               <Text style={[styles.label, darkMode && styles.textWhite]}>AI Recommended Authority</Text>
-               <View style={[styles.card, darkMode && styles.cardDark, { padding: 16 }]}>
-                 <Text style={[styles.dropdownText, darkMode && styles.textWhite, { fontWeight: 'bold' }]}>
-                   {recommendedAuthority.authorityName}
-                 </Text>
-                 <Text style={[styles.readOnlyLabel, darkMode && styles.textGray, { marginTop: 4 }]}>
-                   {recommendedAuthority.reason}
-                 </Text>
-                 <Text style={[styles.readOnlyLabel, darkMode && styles.textGray, { marginTop: 4, fontStyle: 'italic' }]}>
-                   Confidence: {(recommendedAuthority.confidence * 100).toFixed(0)}%
-                 </Text>
-               </View>
+               <Text style={[styles.label, darkMode && styles.textWhite]}>AI Recommended Authorities</Text>
+               {recommendedAuthorities.map((authority, index) => (
+                 <TouchableOpacity 
+                    key={index} 
+                    onPress={() => handleChooseAuthority(authority.authorityCompanyId)}
+                    style={[
+                        styles.card, 
+                        darkMode && styles.cardDark, 
+                        { padding: 16, marginBottom: 12 },
+                        chosenAuthorities.includes(authority.authorityCompanyId) && styles.selectedCard
+                    ]}
+                  >
+                   <Text style={[styles.dropdownText, darkMode && styles.textWhite, { fontWeight: 'bold' }]}>
+                     {authority.authorityName}
+                   </Text>
+                   <Text style={[styles.readOnlyLabel, darkMode && styles.textGray, { marginTop: 4 }]}>
+                     {authority.reason}
+                    </Text>
+                   {/*<Text style={[styles.readOnlyLabel, darkMode && styles.textGray, { marginTop: 4, fontStyle: 'italic' }]}>
+                     Confidence: {(authority.confidence * 100).toFixed(0)}%
+                    </Text>*/}
+                 </TouchableOpacity>
+               ))}
              </View>
            )}
 
@@ -672,6 +695,11 @@ const styles = StyleSheet.create({
   textGray: { color: '#9CA3AF' },
   req: { color: '#EF4444' },
   card: { backgroundColor: 'white', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB' },
+  selectedCard: {
+    borderColor: '#1E88E5',
+    borderWidth: 2,
+    backgroundColor: '#EFF6FF',
+  },
   cardDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
   label: { marginBottom: 12, fontWeight: '600', color: '#374151', fontSize: 14 },
   

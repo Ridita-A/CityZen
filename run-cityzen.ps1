@@ -17,10 +17,10 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd ai-service; ve
 # Terminal 4: Frontend
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npx expo start -c"
 
-# Terminal 5: Gemini Service
+# Terminal 5: recommendation Service
 Start-Process powershell -ArgumentList "-NoExit", "-Command", `
 "
-cd gemini-service;
+cd openrouter-service;
 if (!(Test-Path venv)) {
     python -m venv venv;
     venv\Scripts\activate;
@@ -28,5 +28,5 @@ if (!(Test-Path venv)) {
 } else {
     venv\Scripts\activate;
 }
-uvicorn gemini_service:app --host 0.0.0.0 --port 8001
+uvicorn openrouter_service:app --host 0.0.0.0 --port 8001
 "

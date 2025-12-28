@@ -12,3 +12,4 @@ ai-service/__pycache__
 ai-service/venv
 openrouter-service/.env
 openrouter-service/venv
+openrouter-service/__pycache__

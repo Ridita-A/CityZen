@@ -34,10 +34,10 @@ gnome-terminal \
     npx expo start -c;
     exec bash"
 
-# === Terminal 5: Gemini Service ===
+# === Terminal 5: OpenRouter Service ===
 gnome-terminal \
-  --tab --title="Gemini Service" -- bash -c "
-    cd gemini-service &&
+  --tab --title="OpenRouter Service" -- bash -c "
+    cd openrouter-service &&
     if [ ! -d \"venv\" ]; then
       python -m venv venv &&
       source venv/bin/activate &&
@@ -45,5 +45,5 @@ gnome-terminal \
     else
       source venv/bin/activate;
     fi &&
-    uvicorn gemini_service:app --host 0.0.0.0 --port 8001;
+    uvicorn openrouter_service:app --host 0.0.0.0 --port 8001;
     exec bash"

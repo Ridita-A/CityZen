@@ -73,6 +73,9 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
     const [errors, setErrors] = useState({});
     const lastGenerationKeyRef = React.useRef(null);
     const activeDetections = React.useRef(0);
+    const detectionCacheRef = React.useRef({}); // Cache AI detection results by image URI
+    const imageToLabelsMapRef = React.useRef({}); // Maps image index -> array of detected labels
+    const imageDetectionMapRef = useRef({}); // Maps image index -> array of all detections
 
     const generationKey = aiResult && location
         ? JSON.stringify({
@@ -88,55 +91,204 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         const runAllDetections = async () => {
             if (images.length === 0) return;
 
-            const detectionMap = {}; // Track unique detections by label
+            // Collect ALL detections above 60% from all images
+            const detectionsByLabel = {};
+            const imageToDetections = {}; // Track which detections are in each image
+            
+            // Also build the maps we'll need for filtering later
+            const imageLabelMap = {}; // image index -> array of labels
+            const imageDetectionMap = {}; // image index -> array of detections
 
-            for (const image of images) {
-                const result = await runAiDetection(image);
+            // First pass: collect all detections
+            for (let i = 0; i < images.length; i++) {
+                // Check cache first to avoid re-running AI on same image
+                let result = detectionCacheRef.current[images[i]];
+                
+                if (!result) {
+                    result = await runAiDetection(images[i]);
+                    // Only cache successful results
+                    if (result) {
+                        detectionCacheRef.current[images[i]] = result;
+                    }
+                }
 
                 if (!result) continue;
 
                 const detectionsArray = result.detections ?? [result];
+                imageToDetections[i] = [];
+                
+                // Track ALL detections above 60% for this image
+                const qualifiedDetections = detectionsArray.filter(det => det.confidence >= 60);
+                imageLabelMap[i] = [];
+                imageDetectionMap[i] = qualifiedDetections.sort((a, b) => b.confidence - a.confidence);
 
                 for (const det of detectionsArray) {
                     if (det.confidence >= 60) {
                         const label = det.label?.toLowerCase() || 'unknown';
-                        if (!detectionMap[label] || det.confidence > detectionMap[label].confidence) {
-                            detectionMap[label] = det;
+                        
+                        // Track label for this image
+                        if (!imageLabelMap[i].includes(label)) {
+                            imageLabelMap[i].push(label);
                         }
+                        
+                        if (!detectionsByLabel[label]) {
+                            detectionsByLabel[label] = [];
+                        }
+
+                        // Check if this exact detection is already in the list
+                        const existingEntry = detectionsByLabel[label].find(
+                            entry => entry.detectionObj.confidence === det.confidence &&
+                                     entry.detectionObj.label === det.label
+                        );
+
+                        if (existingEntry) {
+                            // Add this image index if not already there
+                            if (!existingEntry.imageIndices.includes(i)) {
+                                existingEntry.imageIndices.push(i);
+                            }
+                        } else {
+                            // New detection
+                            detectionsByLabel[label].push({
+                                detectionObj: det,
+                                imageIndices: [i],
+                            });
+                        }
+
+                        imageToDetections[i].push(det);
                     }
                 }
             }
 
-            const qualifiedDetections = Object.values(detectionMap);
+            // Store the maps for use in handleIssueSelection
+            imageToLabelsMapRef.current = imageLabelMap;
+            imageDetectionMapRef.current = imageDetectionMap;
 
-            if (qualifiedDetections.length === 0) {
+            // Check if any image has multiple different issues detected
+            let multipleIssuesInSingleImage = false;
+            let imageWithMultipleIssues = null;
+
+            for (const [imageIndex, detections] of Object.entries(imageToDetections)) {
+                const uniqueLabels = new Set(detections.map(d => d.label?.toLowerCase()));
+                if (uniqueLabels.size > 1) {
+                    multipleIssuesInSingleImage = true;
+                    imageWithMultipleIssues = parseInt(imageIndex);
+                    break;
+                }
+            }
+
+            // Get all unique detections sorted by confidence
+            const allQualifiedDetections = Object.values(detectionsByLabel)
+                .flat()
+                .map(entry => ({
+                    ...entry.detectionObj,
+                    imageIndices: entry.imageIndices,
+                }))
+                .sort((a, b) => b.confidence - a.confidence);
+
+            const uniqueDetections = [];
+            const seenLabels = new Set();
+
+            for (const det of allQualifiedDetections) {
+                const label = det.label?.toLowerCase();
+                if (!seenLabels.has(label)) {
+                    uniqueDetections.push(det);
+                    seenLabels.add(label);
+                }
+            }
+
+            if (uniqueDetections.length === 0) {
                 setAiResult(null);
-            } else if (qualifiedDetections.length === 1) {
-                setAiResult(qualifiedDetections[0]);
+            } else if (uniqueDetections.length === 1 && !multipleIssuesInSingleImage) {
+                // Only one issue type detected across all images, and no image has multiple issues
+                setAiResult(uniqueDetections[0]);
             } else {
-                // Multiple detections found - show selection prompt
-                showDetectionSelectionAlert(qualifiedDetections);
+                // Multiple different issues detected OR a single image has multiple issues
+                // Show selection prompt
+                showDetectionSelectionAlert(uniqueDetections, multipleIssuesInSingleImage, imageWithMultipleIssues);
             }
         };
 
         runAllDetections();
     }, [images]);
 
-    const showDetectionSelectionAlert = (detections) => {
+    /**
+     * Shows an alert when multiple different issues are detected.
+     * Handles both:
+     * 1. Multiple issues across different images
+     * 2. Multiple issues within the same image
+     * 
+     * When user selects one issue, images containing that issue are kept.
+     */
+    const showDetectionSelectionAlert = (detections, multipleIssuesInSingleImage, imageWithMultipleIssues) => {
+        let alertMessage = 'The images contain multiple issues. Please select which one to report:';
+        
+        if (multipleIssuesInSingleImage) {
+            alertMessage = `Image ${imageWithMultipleIssues + 1} contains multiple issues. Please select which one you want to report.\n\nAll selected issues and images will be kept as both were detected in the same image:`;
+        }
+
         const detectionOptions = detections
             .sort((a, b) => b.confidence - a.confidence)
             .map((det) => ({
                 text: `${det.label} (${det.confidence}%)`,
-                onPress: () => setAiResult(det),
+                onPress: () => {
+                    // When user selects an issue, filter images to keep only those with the selected issue
+                    handleIssueSelection(det);
+                },
             }));
 
-        detectionOptions.push({ text: 'Cancel', onPress: () => setAiResult(null), style: 'cancel' });
+        detectionOptions.push({
+            text: 'Cancel',
+            onPress: () => {
+                setAiResult(null);
+                // Optional: Clear images on cancel if you want strict issue categorization
+                // setImages([]);
+            },
+            style: 'cancel',
+        });
 
         Alert.alert(
             'Multiple Issues Detected',
-            'The images contain multiple issues. Please select which one to report:',
+            alertMessage,
             detectionOptions
         );
+    };
+
+    /**
+     * After user selects an issue type, this function:
+     * 1. Sets the selected detection as the AI result
+     * 2. Filters images to keep only those containing the selected issue
+     * 3. Images are kept even if they have multiple detected issues (if one matches the selection)
+     */
+    const handleIssueSelection = async (selectedDetection) => {
+        setAiResult(selectedDetection);
+
+        // Filter images based on whether they contain the selected issue
+        const selectedLabel = selectedDetection.label?.toLowerCase();
+        const imagesToKeep = [];
+        
+        for (let i = 0; i < images.length; i++) {
+            const detectedLabels = imageToLabelsMapRef.current[i];
+            
+            // Keep image if it contains the selected issue label
+            if (detectedLabels && detectedLabels.includes(selectedLabel)) {
+                imagesToKeep.push(i);
+            }
+        }
+
+        // Filter images to keep only those matching the selected issue
+        const filteredImages = images.filter((_, index) => imagesToKeep.includes(index));
+
+        // If no images match the selected issue, keep all images but warn the user
+        if (filteredImages.length === 0) {
+            Alert.alert(
+                'No matching images',
+                `No images have "${selectedDetection.label}" detected. Keeping all images.`
+            );
+            return;
+        }
+
+        // Update images list to contain only images with the selected issue
+        setImages(filteredImages);
     };
 
     useEffect(() => {

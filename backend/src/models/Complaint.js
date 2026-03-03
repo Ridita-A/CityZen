@@ -14,7 +14,11 @@ const Complaint = sequelize.define('Complaint', {
   },
   categoryId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true, // Null when complaint is a draft awaiting category approval
+  },
+  pendingCategoryRequestId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
   },
   title: {
     type: DataTypes.STRING,
@@ -33,7 +37,7 @@ const Complaint = sequelize.define('Complaint', {
     allowNull: false,
   },
   currentStatus: {
-    type: DataTypes.ENUM('pending', 'accepted', 'in_progress', 'resolved', 'appealed', 'completed', 'rejected'),
+    type: DataTypes.ENUM('draft', 'pending', 'accepted', 'in_progress', 'resolved', 'appealed', 'completed', 'rejected'),
     allowNull: false
   },
   upvotes: {

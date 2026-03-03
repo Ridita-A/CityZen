@@ -13,7 +13,10 @@ export const ComplaintProvider = ({ children }) => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [privacyEnabled, setPrivacyEnabled] = useState(false);
   const [aiResult, setAiResult] = useState(null);
-  const [assignedAuthorities, setAssignedAuthorities] = useState([]); // New state for assigned authorities
+  const [assignedAuthorities, setAssignedAuthorities] = useState([]);
+  const [unknownCategoryLabel, setUnknownCategoryLabel] = useState(null); // AI label not found in DB
+  const [unknownCategoryDescription, setUnknownCategoryDescription] = useState(null); // AI description for the new category
+  const [isDraftMode, setIsDraftMode] = useState(false); // If complaint is being submitted as draft 
 
   const resetState = () => {
     setImages([]);
@@ -24,7 +27,10 @@ export const ComplaintProvider = ({ children }) => {
     setSelectedCategory(null);
     setPrivacyEnabled(false);
     setAiResult(null);
-    setAssignedAuthorities([]); // Reset assigned authorities
+    setAssignedAuthorities([]);
+    setUnknownCategoryLabel(null);
+    setUnknownCategoryDescription(null);
+    setIsDraftMode(false);
   };
   
   const value = {
@@ -46,6 +52,12 @@ export const ComplaintProvider = ({ children }) => {
     setPrivacyEnabled,
     assignedAuthorities,
     setAssignedAuthorities,
+    unknownCategoryLabel,
+    setUnknownCategoryLabel,
+    unknownCategoryDescription,
+    setUnknownCategoryDescription,
+    isDraftMode,
+    setIsDraftMode,
     resetState,
   };
 

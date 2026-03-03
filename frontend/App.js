@@ -58,6 +58,9 @@ import AddEvidenceScreen from './src/screens/AddEvidenceScreen'; // Import new s
 import AuthorityComplaintListScreen from './src/screens/AuthorityComplaintListScreen';
 import AuthorityComplaintDetailScreen from './src/screens/AuthorityComplaintDetailScreen';
 import AdminComplaintDetailScreen from './src/screens/AdminComplaintDetailScreen';
+import DraftComplaintSubmitScreen from './src/screens/DraftComplaintSubmitScreen';
+import DraftSubmittedScreen from './src/screens/DraftSubmittedScreen';
+import AdminCategoryRequestDetailsScreen from './src/screens/AdminCategoryRequestDetailsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -69,15 +72,7 @@ export default function App() {
     <ComplaintProvider>
       <NotificationProvider>
         <NavigationContainer ref={(ref) => {
-          // Dirty hack to access navigation from context without deep passing
-          // Ideally we'd use a navigation service, but this works for the context injection pattern
           if (ref) {
-            // We need a way to pass this ref to the context. 
-            // Since NotificationProvider is inside, we can't pass it as prop easily unless we restructure.
-            // Actually, we can use a ref + useEffect inside the provider if we move NavigationContainer *inside* Provider?
-            // No, Provider needs to be outside to show Toast *over* everything.
-            // But NavigationContainer needs to be ready.
-            // Let's use a "NavigationAware" component inside.
           }
         }}>
           <NavigationAware />
@@ -121,6 +116,8 @@ export default function App() {
             <Stack.Screen name="SubmitComplaintDetails">{(props) => <SubmitComplaintDetailsScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
             <Stack.Screen name="SubmitComplaint">{(props) => <SubmitComplaintScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
             <Stack.Screen name="SubmittedComplaint">{(props) => <SubmittedComplaintScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
+            <Stack.Screen name="DraftComplaintSubmit">{(props) => <DraftComplaintSubmitScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
+            <Stack.Screen name="DraftSubmitted">{(props) => <DraftSubmittedScreen {...props} darkMode={darkMode} />}</Stack.Screen>
             <Stack.Screen name="UserComplaintList">{(props) => <UserComplaintListScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
             <Stack.Screen name="SimilarComplaints">{(props) => <SimilarComplaintsScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
             <Stack.Screen name="Notifications">{(props) => <NotificationsScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
@@ -131,6 +128,7 @@ export default function App() {
             <Stack.Screen name="AuthorityComplaintDetail">{(props) => <AuthorityComplaintDetailScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen name="AdminDashboard">{(props) => <AdminDashboardScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen name="AdminComplaintDetail">{(props) => <AdminComplaintDetailScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
+            <Stack.Screen name="AdminCategoryRequestDetails">{(props) => <AdminCategoryRequestDetailsScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="AddEvidence">{(props) => <AddEvidenceScreen {...props} />}</Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>

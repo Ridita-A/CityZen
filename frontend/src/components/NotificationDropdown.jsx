@@ -154,6 +154,10 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
     } else {
       console.log('✗ No complaint ID, navigating to flags tab');
       // Fallback to flags tab if no complaint ID
+      let flagTab = 'reported';
+      if (notif.type === 'appeal') flagTab = 'appealed';
+      else if (notif.type === 'category_request') flagTab = 'requests';
+      
       navigation?.navigate('AdminDashboard', {
         initialTab: 'flags',
         flagTab: notif.type === 'report' ? 'reported' : 'appealed'
@@ -173,6 +177,8 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
       return <Flag size={16} color="#EF4444" />;
     } else if (type === 'appeal') {
       return <AlertTriangle size={16} color="#F59E0B" />;
+    } else if (type === 'category_request') {
+      return <Tag size={16} color="#D97706" />;
     }
     return <Bell size={16} color="#1E88E5" />;
   };

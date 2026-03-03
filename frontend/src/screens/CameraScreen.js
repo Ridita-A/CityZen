@@ -1,113 +1,202 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
-import { Camera, Image as GalleryIcon, ArrowRight } from 'lucide-react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
+import { Camera, Image as GalleryIcon, Library, RefreshCcw } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useComplaint } from '../context/ComplaintContext'; // Import the context hook
+import { useComplaint } from '../context/ComplaintContext';
+import { saveOfflineReport } from '../utils/offlineStorage';
 
 export default function CameraScreen({ navigation }) {
     const {
-        images,
         setImages,
-        resetState, // Destructure resetState
+        resetState,
     } = useComplaint();
 
-    const [imageUri, setImageUri] = useState(null); // Local for displaying preview
+    const [permission, requestPermission] = useCameraPermissions();
+    const [locationPermission, setLocationPermission] = useState(null);
+    const [isCapturing, setIsCapturing] = useState(false);
+    const cameraRef = useRef(null);
+    const [previewUri, setPreviewUri] = useState(null);
 
     useEffect(() => {
-        resetState(); // Clear context on component mount
+        resetState();
+        (async () => {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            setLocationPermission(status === 'granted');
+        })();
     }, []);
 
-    const handleNext = () => {
-        if (images.length > 0) {
-            navigation.navigate('SubmitComplaintDetails');
-        } else {
-            Alert.alert("No Image", "Please select an image before proceeding.");
+    if (!permission) {
+        return <View />;
+    }
+
+    if (!permission.granted) {
+        return (
+            <View style={styles.container}>
+                <Text style={styles.message}>We need your permission to show the camera</Text>
+                <TouchableOpacity onPress={requestPermission} style={styles.permissionButton}>
+                    <Text style={styles.permissionButtonText}>Grant Permission</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    const takePicture = async () => {
+        if (!cameraRef.current || isCapturing) {
+            console.log("Camera not ready or already capturing");
+            return;
         }
-    };
 
-    //Permissions
-    const requestCameraPermission = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access camera is required!');
-            return false;
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+            Alert.alert("Location Disabled", "Please enable location services (GPS) in your device settings.");
+            return;
         }
-        return true;
-    };
 
-    const requestLibraryPermission = async () => { // New permission request
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access media library is required!');
-            return false;
+        if (!locationPermission) {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert("Permission Denied", "Location permission is required to capture GPS data for the report.");
+                return;
+            }
+            setLocationPermission(true);
         }
-        return true;
-    };
 
-    //Camera
-    const handleImagePick = async () => {
-        const hasPermission = await requestCameraPermission();
-        if (!hasPermission) return;
+        setIsCapturing(true);
+        let photo = null;
+        
+        try {
+            // 1. Capture Photo First
+            try {
+                photo = await cameraRef.current.takePictureAsync({ 
+                    quality: 0.7,
+                    skipProcessing: true // Faster capture
+                });
+            } catch (cameraErr) {
+                console.error("Camera Capture Error:", cameraErr);
+                throw new Error("PHOTO_FAIL");
+            }
+            
+            // 2. Capture GPS
+            let location = null;
+            try {
+                location = await Location.getCurrentPositionAsync({ 
+                    accuracy: Location.Accuracy.Highest,
+                    timeout: 45000 
+                });
+            } catch (locationErr) {
+                console.error("Location Capture Error:", locationErr);
+                // Try fallback to last known if current fails
+                location = await Location.getLastKnownPositionAsync();
+                if (!location) throw new Error("GPS_FAIL");
+            }
+            
+            if (!location || (location.coords.accuracy > 100)) { // Relaxed to 100m for difficult fixes
+                if (!location) {
+                  Alert.alert("Location Error", "Could not get GPS coordinates. Please ensure you have a clear view of the sky.");
+                } else {
+                  Alert.alert("Poor Accuracy", `GPS accuracy is too low (${Math.round(location.coords.accuracy)}m). Please move outdoors for a better fix.`);
+                }
+                setIsCapturing(false);
+                return;
+            }
 
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.All,
-            allowsEditing: false,
-            quality: 1,
-            exif: true,
-        });
-
-        if (result.assets?.length > 0) {
-            const asset = result.assets[0];
-            setImages([asset.uri]); // Set images to context
-            setImageUri(asset.uri);
+            // 3. Save Offline
+            await saveOfflineReport(photo.uri, location);
+            setPreviewUri(photo.uri);
+            Alert.alert("Saved Successfully", "Image and Location saved. You can submit it from the Offline Gallery when you are back online.");
+            
+        } catch (error) {
+            console.error("Global Capture error:", error);
+            if (error.message === "PHOTO_FAIL") {
+                Alert.alert("Camera Error", "Failed to take the photo. Please try again.");
+            } else if (error.message === "GPS_FAIL") {
+                Alert.alert("GPS Error", "Failed to get a location fix. Pure GPS (no internet) can take up to 2 minutes. Try again in an open area.");
+            } else {
+                Alert.alert("Capture Error", "An unexpected error occurred during capture.");
+            }
+        } finally {
+            setIsCapturing(false);
         }
     };
 
     const handleLibraryPick = async () => {
-        const hasPermission = await requestLibraryPermission();
-        if (!hasPermission) return;
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission to access media library is required!');
+            return;
+        }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.All, // Restored as per user instruction
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
             quality: 1,
-            allowsMultipleSelection: true, 
             exif: true,
         });
 
         if (result.assets?.length > 0) {
             const asset = result.assets[0];
-            setImages(result.assets.map(a => a.uri)); // Set images to context
-            setImageUri(asset.uri);
+            setImages([asset.uri]);
+            setPreviewUri(asset.uri);
+            navigation.navigate('SubmitComplaintDetails');
         }
     };
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerText}>Take a snap of your community issue!</Text>
+                <Text style={styles.headerText}>Capture Community Issues</Text>
             </View>
 
             <View style={styles.cameraContainer}>
-                {imageUri ? (
-                    <Image source={{ uri: imageUri }} style={styles.previewImage} />
+                {!previewUri ? (
+                    <CameraView 
+                        style={styles.camera} 
+                        ref={cameraRef}
+                        facing="back"
+                    >
+                        {isCapturing && (
+                            <View style={styles.loadingOverlay}>
+                                <ActivityIndicator size="large" color="white" />
+                                <Text style={styles.loadingText}>Capturing GPS & Image...</Text>
+                            </View>
+                        )}
+                    </CameraView>
                 ) : (
-                    <Text style={styles.placeholderText}>Take or Upload Evidence</Text>
+                    <View style={styles.previewContainer}>
+                        <Image source={{ uri: previewUri }} style={styles.previewImage} />
+                        <TouchableOpacity 
+                            style={styles.retakeButton} 
+                            onPress={() => setPreviewUri(null)}
+                        >
+                            <RefreshCcw size={24} color="white" />
+                            <Text style={styles.retakeText}>Retake</Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
             </View>
 
             <View style={styles.footer}>
-                <TouchableOpacity onPress={handleLibraryPick} style={styles.galleryButton}>
-                    <GalleryIcon size={32} color="white" />
+                <TouchableOpacity onPress={handleLibraryPick} style={styles.sideButton}>
+                    <Library size={30} color="white" />
+                    <Text style={styles.sideButtonText}>Library</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleImagePick} style={styles.cameraButton}>
-                    <Camera size={40} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.nextButton}
-                    onPress={handleNext}
+                
+                <TouchableOpacity 
+                    onPress={takePicture} 
+                    style={[styles.cameraButton, isCapturing && styles.disabledButton]}
+                    disabled={isCapturing}
                 >
-                    <ArrowRight size={32} color="white" />
+                    <View style={styles.innerCameraButton} />
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    onPress={() => navigation.navigate('OfflineGallery')} 
+                    style={styles.sideButton}
+                >
+                    <GalleryIcon size={30} color="white" />
+                    <Text style={styles.sideButtonText}>Offline Reports</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -117,51 +206,111 @@ export default function CameraScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'white',
+        backgroundColor: '#000',
     },
     header: {
-        height: 200,
+        height: 100,
         backgroundColor: '#1E88E5',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 20,
+        paddingTop: 40,
     },
     headerText: {
-        fontSize: 26,
+        fontSize: 20,
         fontWeight: 'bold',
-        textAlign: 'center',
         color: 'white',
-        marginTop: 10
     },
     cameraContainer: {
         flex: 1,
+        overflow: 'hidden',
+    },
+    camera: {
+        flex: 1,
+    },
+    previewContainer: {
+        flex: 1,
+        backgroundColor: '#000',
+    },
+    previewImage: {
+        flex: 1,
+        resizeMode: 'contain',
+    },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    placeholderText: {
-        fontSize: 18,
-        color: '#A0A0A0',
-    },
-    previewImage: {
-        width: '100%',
-        height: '100%',
+    loadingText: {
+        color: 'white',
+        marginTop: 10,
+        fontSize: 16,
     },
     footer: {
-        height: 150,
+        height: 120,
         backgroundColor: '#1E88E5',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-around',
-        paddingHorizontal: 20,
-        paddingBottom: 10
+        paddingBottom: 20,
     },
     cameraButton: {
-        backgroundColor: '#1E88E5',
-        borderRadius: 50,
-        padding: 15,
-        borderWidth: 2,
-        borderColor: 'white',
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        borderWidth: 5,
+        borderColor: 'rgba(255,255,255,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    galleryButton: {},
-    nextButton: {},
+    innerCameraButton: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'white',
+    },
+    sideButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sideButtonText: {
+        color: 'white',
+        fontSize: 12,
+        marginTop: 4,
+    },
+    retakeButton: {
+        position: 'absolute',
+        bottom: 20,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 25,
+        alignItems: 'center',
+    },
+    retakeText: {
+        color: 'white',
+        marginLeft: 10,
+        fontWeight: 'bold',
+    },
+    message: {
+        textAlign: 'center',
+        paddingBottom: 10,
+        color: 'white',
+        marginTop: 100,
+    },
+    permissionButton: {
+        backgroundColor: '#1E88E5',
+        padding: 15,
+        borderRadius: 10,
+        alignSelf: 'center',
+    },
+    permissionButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+    },
+    disabledButton: {
+        opacity: 0.5,
+    }
 });

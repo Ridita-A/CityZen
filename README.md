@@ -221,6 +221,18 @@ The following folders contain `.env` files that must be configured correctly:
 * `backend/.env`
 * `openrouter-service/.env`
 
+### Email OTP (2-Factor Authentication)
+
+To enable email-based OTP for signup and login, add the following to `backend/.env`:
+
+```dotenv
+EMAIL_USER=your-gmail@gmail.com
+EMAIL_PASS=your-gmail-app-password
+```
+
+**Note:** For Gmail, you must use an **App Password** rather than your Gmail password.  
+Generate one at [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+
 Ensure all required URLs, keys, and ports are set before running the app.
 
 ---

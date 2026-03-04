@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator
 } from 'react-native';
 import { Mail, Lock, Building2, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
 
@@ -9,13 +9,10 @@ import { Mail, Lock, Building2, Eye, EyeOff, AlertCircle } from 'lucide-react-na
 import axios from 'axios';
 import { auth } from '../config/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNotification } from '../context/NotificationContext';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function LoginScreen({ navigation }) {
-  const { refreshUser } = useNotification();
   // NOTE: Role state is kept for UI only; actual login role is fetched from DB
   const [role, setRole] = useState('citizen');
   const [email, setEmail] = useState('');
@@ -39,50 +36,23 @@ export default function LoginScreen({ navigation }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
-      // 2. Fetch User Profile & Role from your Express Backend
-      const response = await axios.get(`${API_URL}/api/users/${firebaseUser.uid}`, {
+      // 2. Request login OTP challenge
+      const response = await axios.post(`${API_URL}/api/auth/login/request-otp`, {
+        firebaseUid: firebaseUser.uid,
+      }, {
         headers: {
           'bypass-tunnel-reminder': 'true', // CRITICAL: Localtunnel fix
           'Content-Type': 'application/json'
         }
       });
 
-      const userData = response.data; // This object contains the stored role, fullName, etc.
-      const authorityCompanyId =
-        userData?.authorityCompanyId ??
-        userData?.companyId ??
-        userData?.Authority?.authorityCompanyId ??
-        userData?.authority?.authorityCompanyId ??
-        null;
-
-      const normalizedUserData = {
-        ...userData,
-        authorityCompanyId: authorityCompanyId ?? undefined,
-        companyId: authorityCompanyId ?? undefined,
-      };
-
-      // Store user data in AsyncStorage for later use (upvotes, profile, etc.)
-      await AsyncStorage.setItem('userData', JSON.stringify(normalizedUserData));
-      await AsyncStorage.setItem('userToken', firebaseUser.uid); // Store Firebase UID as token
-      if (normalizedUserData.role === 'authority' && authorityCompanyId != null) {
-        await AsyncStorage.setItem('authorityCompanyId', String(authorityCompanyId));
-      }
-      if (refreshUser) {
-        await refreshUser();
-      }
-
-      // 3. Navigation based on Role fetched from the database
-      // Check App.js for the exact screen names
-      if (normalizedUserData.role === 'admin') {
-        // Navigates to <Stack.Screen name="AdminDashboard" />
-        navigation.replace('AdminDashboard');
-      } else if (normalizedUserData.role === 'authority') {
-        // Navigates to <Stack.Screen name="AuthorityDashboard" />
-        navigation.replace('AuthorityDashboard');
-      } else {
-        // ✅ FIX: Navigates to <Stack.Screen name="HomeScreen" />
-        navigation.replace('HomeScreen');
-      }
+      const challengeData = response.data;
+      navigation.navigate('EmailOtp', {
+        purpose: 'login',
+        challengeId: challengeData.challengeId,
+        email: challengeData.email || email,
+        firebaseUid: firebaseUser.uid,
+      });
 
     } catch (error) {
       console.error('Login Error:', error);
@@ -93,7 +63,9 @@ export default function LoginScreen({ navigation }) {
       } else if (error.message.includes('Network Error') || error.response === undefined) {
         message = 'Server connection failed. Is your backend and Localtunnel running?';
       } else if (error.response && error.response.status === 404) {
-        message = 'User profile not found in database. Please contact support.';
+        message = 'User profile not found in database. Please sign up first.';
+      } else if (error.response?.data?.message) {
+        message = error.response.data.message;
       }
 
       setError(message);

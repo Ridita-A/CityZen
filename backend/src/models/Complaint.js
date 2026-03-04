@@ -45,7 +45,7 @@ const Complaint = sequelize.define('Complaint', {
     defaultValue: 0
   },
   statusNotes: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT,
     allowNull: true
   },
   rating: {

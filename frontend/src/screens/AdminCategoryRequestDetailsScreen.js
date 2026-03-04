@@ -32,12 +32,21 @@ export default function AdminCategoryRequestDetailsScreen({ route, navigation })
 
     setIsSubmitting(true);
     try {
-      await axios.patch(
+      const response = await axios.patch(
         `${API_URL}/api/category-requests/${item.id}/approve`,
         { categoryName: item.categoryLabel, authorityIds: selectedDepartments },
         { headers: { 'bypass-tunnel-reminder': 'true' } }
       );
-      Alert.alert('Approved', `"${item.categoryLabel}" has been added. ${item.draftCount} complaint(s) are now pending.`, [
+      const { activatedComplaints = 0, rejectedComplaints = 0 } = response.data;
+      const totalDrafts = activatedComplaints + rejectedComplaints;
+      let summary = `"${item.categoryLabel}" has been added as a new category.\n\n`;
+      if (activatedComplaints > 0) {
+        summary += `✅ ${activatedComplaints} complaint(s) are now pending and assigned to local authorities.\n`;
+      }
+      if (rejectedComplaints > 0) {
+        summary += `\n⚠️ ${rejectedComplaints} complaint(s) were rejected because their location is not within any assigned department's service area. Those citizens have been notified.`;
+      }
+      Alert.alert('Category Approved', summary, [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
     } catch (error) {
@@ -132,36 +141,39 @@ export default function AdminCategoryRequestDetailsScreen({ route, navigation })
         </View>
 
         {/* Department Selection */}
-        <Text style={[styles.sectionTitle, darkMode && styles.textWhite]}>Assign Departments</Text>
-        <Text style={[styles.sectionDesc, darkMode && styles.textGray]}>
-          Select one or more departments responsible for this category.
-        </Text>
-        
-        <View style={styles.departmentsGrid}>
-          {departments.map((dept) => {
-            const isSelected = selectedDepartments.includes(dept.id);
-            return (
-              <TouchableOpacity
-                key={dept.id}
-                style={[
-                  styles.pillLarge,
-                  isSelected ? styles.pillSelected : (darkMode ? styles.pillUnselectedDark : styles.pillUnselected),
-                ]}
-                onPress={() => toggleDepartment(dept.id)}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Building2 size={16} color={isSelected ? 'white' : '#1E88E5'} />
-                  <Text style={[
-                    styles.pillText,
-                    isSelected ? styles.pillTextSelected : styles.pillTextUnselected
-                  ]}>
-                    {dept.name}
-                  </Text>
-                </View>
-                {isSelected ? <CheckSquare size={18} color="white" /> : <Square size={18} color={darkMode ? '#4B5563' : '#9CA3AF'} />}
-              </TouchableOpacity>
-            );
-          })}
+        <View style={[styles.card, darkMode && styles.cardDark]}>
+          <Text style={[styles.sectionTitle, darkMode && styles.textWhite, { marginBottom: 6 }]}>Assign Departments</Text>
+          <Text style={[styles.sectionDesc, darkMode && styles.textGray]}>
+            Select departments responsible for this category. Only complaints within a selected department's service area will be activated — others will be rejected with a location notice.
+          </Text>
+          
+          <View style={styles.departmentsGrid}>
+            {departments.map((dept) => {
+              const isSelected = selectedDepartments.includes(dept.id);
+              return (
+                <TouchableOpacity
+                  key={dept.id}
+                  style={[
+                    styles.pillLarge,
+                    isSelected ? styles.pillSelected : (darkMode ? styles.pillUnselectedDark : styles.pillUnselected),
+                  ]}
+                  onPress={() => toggleDepartment(dept.id)}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+                    <Building2 size={16} color={isSelected ? 'white' : '#1E88E5'} style={{ flexShrink: 0 }} />
+                    <Text style={[
+                      styles.pillText,
+                      isSelected ? styles.pillTextSelected : styles.pillTextUnselected,
+                      { flex: 1, flexWrap: 'wrap' }
+                    ]}>
+                      {dept.name}
+                    </Text>
+                  </View>
+                  {isSelected ? <CheckSquare size={18} color="white" style={{ flexShrink: 0 }} /> : <Square size={18} color={darkMode ? '#4B5563' : '#9CA3AF'} style={{ flexShrink: 0 }} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </ScrollView>
 

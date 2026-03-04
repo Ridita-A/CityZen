@@ -101,7 +101,7 @@ Existing categories in the system:
 Rules:
 - Return ONLY valid JSON
 - If the image clearly shows an issue matching one of the existing categories, use that name and set is_new_category to false
-- If the image shows a real civic issue that does NOT match any existing category, suggest a short descriptive name (2-4 words, Title Case), provide a short description (<10 words) about it and its hazards, and set is_new_category to true
+- If the image shows a real civic issue that does NOT match any existing category, suggest a short descriptive name (2-4 words, Title Case), provide a brief description (about 10 words) about it and its hazards, and set is_new_category to true
 - If no real civic issue is visible, return label "No Issue" and set is_new_category to false
 - Confidence must be a number between 0 and 100
 - If is_new_category is false, category_description can be null or empty string

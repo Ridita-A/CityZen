@@ -5,6 +5,7 @@ const {
   Category,
   AuthorityCompany,
   AuthorityCompanyCategory,
+  AuthorityCompanyAreas,
   ComplaintAssignment,
   User,
   Citizen,
@@ -36,6 +37,17 @@ const getHammingDistance = (str1, str2) => {
     if (str1[i] !== str2[i]) dist++;
   }
   return dist;
+};
+
+const haversineKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
 exports.saveDraftComplaint = async (req, res) => {
@@ -315,27 +327,62 @@ exports.approveRequest = async (req, res) => {
       });
     }
 
-    // 3. Activate all draft complaints under this request
-    const draftComplaints = categoryRequest.draftComplaints || [];
-    for (const draft of draftComplaints) {
-      await draft.update(
-        {
-          categoryId: category.id,
-          currentStatus: 'pending',
-          pendingCategoryRequestId: null,
-        },
-        { transaction: t }
-      );
+    // 3. Pre-fetch service areas for all mapped authority companies
+    const companyAreas = await AuthorityCompanyAreas.findAll({
+      where: { authorityCompanyId: authorityIds },
+    });
 
-      // Assign only the authority IDs that actually mapped (re-use authorityIds;
-      // all invalid ones were skipped above so mappedCount > 0 guarantees at least one)
-      for (const authorityId of authorityIds) {
-        const company = await AuthorityCompany.findByPk(authorityId);
-        if (!company) continue;
-        await ComplaintAssignment.create(
-          { complaintId: draft.id, authorityCompanyId: authorityId },
+    // 3a. Activate/reject each draft complaint based on area coverage
+    const draftComplaints = categoryRequest.draftComplaints || [];
+    let activatedCount = 0;
+    let rejectedCount = 0;
+
+    for (const draft of draftComplaints) {
+      const draftLat = parseFloat(draft.latitude);
+      const draftLon = parseFloat(draft.longitude);
+
+      // Find which mapped authority companies cover this draft's GPS location
+      const coveringAuthorityIds = new Set();
+      for (const area of companyAreas) {
+        if (!authorityIds.includes(area.authorityCompanyId)) continue;
+        const dist = haversineKm(
+          draftLat, draftLon,
+          parseFloat(area.latitude), parseFloat(area.longitude)
+        );
+        if (dist <= parseFloat(area.radius)) {
+          coveringAuthorityIds.add(area.authorityCompanyId);
+        }
+      }
+
+      if (coveringAuthorityIds.size === 0) {
+        // No authority covers this draft's location — reject it
+        await draft.update(
+          {
+            currentStatus: 'rejected',
+            statusNotes: `Your complaint location is not within the service area of any authority responsible for the "${category.name}" category. The category has been approved but no local department can handle your specific area.`,
+            pendingCategoryRequestId: null,
+          },
           { transaction: t }
         );
+        rejectedCount++;
+      } else {
+        // At least one authority covers this location — activate
+        await draft.update(
+          {
+            categoryId: category.id,
+            currentStatus: 'pending',
+            pendingCategoryRequestId: null,
+          },
+          { transaction: t }
+        );
+
+        for (const authorityId of coveringAuthorityIds) {
+          await ComplaintAssignment.create(
+            { complaintId: draft.id, authorityCompanyId: authorityId },
+            { transaction: t }
+          );
+        }
+        activatedCount++;
       }
     }
 
@@ -347,10 +394,11 @@ exports.approveRequest = async (req, res) => {
 
     await t.commit();
     return res.json({
-      message: `Category request approved. ${draftComplaints.length} draft complaint(s) are now pending.`,
+      message: `Category "${category.name}" approved. ${activatedCount} complaint(s) activated, ${rejectedCount} rejected (no local authority coverage).`,
       categoryId: category.id,
       categoryName: category.name,
-      activatedComplaints: draftComplaints.length,
+      activatedComplaints: activatedCount,
+      rejectedComplaints: rejectedCount,
     });
   } catch (error) {
     await t.rollback();

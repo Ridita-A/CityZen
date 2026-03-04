@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { Bell, CheckCircle, Clock, AlertCircle, MapPin, AlertTriangle, Flag, X, ChevronRight } from 'lucide-react-native';
+import { Bell, CheckCircle, Clock, AlertCircle, MapPin, AlertTriangle, Flag, X, ChevronRight, Tag } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useNotification, useAdminNotification, useAuthorityNotification } from '../context/NotificationContext';
 import api from '../services/api';

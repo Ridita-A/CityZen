@@ -12,6 +12,7 @@ const AuthorityCompanyCategory = require('./AuthorityCompanyCategory');
 const AuthorityCompanyAreas = require('./AuthorityCompanyAreas');
 const Upvote = require('./Upvote');
 const ComplaintReport = require('./ComplaintReport');
+const PendingCategoryRequest = require('./PendingCategoryRequest');
 
 // --- Define Associations (One-to-One) ---
 
@@ -100,7 +101,7 @@ AuthorityCompany.belongsToMany(Complaint, {
 AuthorityCompany.hasMany(AuthorityCompanyAreas, { foreignKey: 'authorityCompanyId' });
 AuthorityCompanyAreas.belongsTo(AuthorityCompany, { foreignKey: 'authorityCompanyId' });
 
-// ComplaintAssignment to AuthorityCompany (for eager loading)
+// ComplaintAssignment to AuthorityCompany 
 ComplaintAssignment.belongsTo(AuthorityCompany, { foreignKey: 'authorityCompanyId' });
 
 // Upvote Associations
@@ -112,6 +113,10 @@ Upvote.belongsTo(Citizen, { foreignKey: 'citizenUid', targetKey: 'UserFirebaseUi
 // Complaint Report Associations
 Complaint.hasMany(ComplaintReport, { foreignKey: 'complaintId', as: 'reports' });
 ComplaintReport.belongsTo(Complaint, { foreignKey: 'complaintId' });
+
+// PendingCategoryRequest to Complaint associations
+PendingCategoryRequest.hasMany(Complaint, { foreignKey: 'pendingCategoryRequestId', as: 'draftComplaints' });
+Complaint.belongsTo(PendingCategoryRequest, { foreignKey: 'pendingCategoryRequestId' });
 
 
 module.exports = {
@@ -128,5 +133,6 @@ module.exports = {
   ComplaintAssignment,
   AuthorityCompanyAreas,
   Upvote,
-  ComplaintReport
+  ComplaintReport,
+  PendingCategoryRequest
 };

@@ -90,31 +90,30 @@ async def detect_with_llm(
         allowed_category_names = [cat['name'] for cat in category_list]
         category_name_to_id = {cat['name']: cat['id'] for cat in category_list}
 
-        # Add "No Issue" as a special category for the LLM
-        allowed_category_names_for_llm = allowed_category_names + ["No Issue"]
-
         prompt = f"""
 You are a civic issue detection AI for Dhaka city.
 
-Analyze the image and identify the SINGLE most relevant issue.
+Analyze the image and identify the SINGLE most relevant urban/civic issue.
 
-Allowed categories:
-{chr(10).join([f'- {name}' for name in allowed_category_names_for_llm])}
+Existing categories in the system:
+{chr(10).join([f'- {name}' for name in allowed_category_names])}
 
 Rules:
 - Return ONLY valid JSON
-- Pick exactly ONE category from the list
+- If the image clearly shows an issue matching one of the existing categories, use that name and set is_new_category to false
+- If the image shows a real civic issue that does NOT match any existing category, suggest a short descriptive name (2-4 words, Title Case), provide a brief description (about 10 words) about it and its hazards, and set is_new_category to true
+- If no real civic issue is visible, return label "No Issue" and set is_new_category to false
 - Confidence must be a number between 0 and 100
-- If unsure or image is unclear, return:
-  {{ "label": "No Issue", "confidence": 40 }}
+- If is_new_category is false, category_description can be null or empty string
 
 Output JSON schema:
 {{
   "label": "string",
-  "confidence": number
+  "confidence": number,
+  "is_new_category": boolean,
+  "category_description": "string"
 }}
 """
-
         response = client.chat.completions.create(
             model="openai/gpt-4o-mini",
             messages=[
@@ -148,26 +147,28 @@ Output JSON schema:
 
         confidence = max(0, min(100, confidence))
 
-        # Get the ID for the detected label
         detected_label = parsed["label"]
-        category_id = category_name_to_id.get(detected_label)
+        is_new_category = bool(parsed.get("is_new_category", False))
+        category_description = parsed.get("category_description", "")
 
-        if detected_label != "No Issue" and category_id is None:
-            # If LLM returned an unknown category and it's not "No Issue",
-            # fallback to "No Issue" or raise an error.
-            # For now, let's return it with id as None or handle as "No Issue".
-            # It's safer to return "No Issue" if the label is not found in allowed categories
-            detected_label = "No Issue"
-            category_id = None # Or the ID of "No Issue" if it exists in DB
+        # Get the DB category ID (only meaningful for known categories)
+        category_id = category_name_to_id.get(detected_label) if not is_new_category else None
+
+        # Safety net: if label returned but not in DB and not flagged as new, flag it now
+        if detected_label != "No Issue" and not is_new_category and category_id is None:
+            is_new_category = True
 
         return {
             "id": category_id,
             "label": detected_label,
-            "confidence": confidence
+            "confidence": confidence,
+            "is_new_category": is_new_category,
+            "category_description": category_description
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # -------------------- Text Generation --------------------
 

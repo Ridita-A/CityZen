@@ -58,6 +58,7 @@ import AddEvidenceScreen from './src/screens/AddEvidenceScreen'; // Import new s
 import AuthorityComplaintListScreen from './src/screens/AuthorityComplaintListScreen';
 import AuthorityComplaintDetailScreen from './src/screens/AuthorityComplaintDetailScreen';
 import AdminComplaintDetailScreen from './src/screens/AdminComplaintDetailScreen';
+import OfflineGalleryScreen from './src/screens/OfflineGalleryScreen';
 import DraftComplaintSubmitScreen from './src/screens/DraftComplaintSubmitScreen';
 import DraftSubmittedScreen from './src/screens/DraftSubmittedScreen';
 import AdminCategoryRequestDetailsScreen from './src/screens/AdminCategoryRequestDetailsScreen';
@@ -130,6 +131,7 @@ export default function App() {
             <Stack.Screen name="AdminComplaintDetail">{(props) => <AdminComplaintDetailScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen name="AdminCategoryRequestDetails">{(props) => <AdminCategoryRequestDetailsScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="AddEvidence">{(props) => <AddEvidenceScreen {...props} />}</Stack.Screen>
+            <Stack.Screen name="OfflineGallery">{(props) => <OfflineGalleryScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
       </NotificationProvider>

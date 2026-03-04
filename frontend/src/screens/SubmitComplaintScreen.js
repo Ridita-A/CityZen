@@ -8,6 +8,7 @@ import { complaintAPI } from '../services/api';
 import axios from 'axios';
 import { auth } from '../config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setReportUploaded } from '../utils/offlineStorage';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const OPENROUTER_API_URL = process.env.EXPO_PUBLIC_OPENROUTER_API_URL;
@@ -147,6 +148,13 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
       });
 
       if (response.status === 201) {
+        // Mark offline reports as uploaded if they exist in our local reports store
+        for (const imageUri of images) {
+          if (imageUri.includes('reports/')) {
+            await setReportUploaded(imageUri);
+          }
+        }
+
         Alert.alert("Success", "Complaint Submitted Successfully!");
         const assignedAuthorityNames = chosenAuthorities.map(chosenId => {
           const authority = recommendedAuthorities.find(rec => rec.id === chosenId);
@@ -355,4 +363,3 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
 });
-

@@ -6,7 +6,7 @@ import { Camera, Image as GalleryIcon, Library, RefreshCcw, ArrowRight } from 'l
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useComplaint } from '../context/ComplaintContext';
-import { saveOfflineReport, deleteReport } from '../utils/offlineStorage';
+import { saveOfflineReport, deleteReport, initStorage } from '../utils/offlineStorage';
 
 export default function CameraScreen({ navigation }) {
     const {
@@ -27,6 +27,7 @@ export default function CameraScreen({ navigation }) {
 
     useEffect(() => {
         resetState();
+        initStorage(); // Trigger cleanup and ensure directory exists
         
         const unsubscribe = NetInfo.addEventListener(state => {
             setIsConnected(state.isConnected);

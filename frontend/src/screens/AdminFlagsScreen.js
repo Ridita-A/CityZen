@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { Clock, XCircle, Send, Trash2, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, ScrollView } from 'react-native';
+import { Clock, XCircle, Send, Trash2, AlertTriangle, CheckCircle, RefreshCw, Tag, Building2 } from 'lucide-react-native';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -25,6 +25,7 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
   useFocusEffect(
     React.useCallback(() => {
       fetchReports();
+      fetchCategoryRequests();
     }, [])
   );
 
@@ -133,6 +134,10 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
   // Data for Forwarded Appeals (tracking approved appeals)
   const [forwardedAppeals, setForwardedAppeals] = useState([]);
 
+  // Category Requests
+  const [categoryRequests, setCategoryRequests] = useState([]);
+  const [departments, setDepartments] = useState([]);
+
   // User moderation info cache (uid -> {strikes, isBanned})
   const [userModerationCache, setUserModerationCache] = useState({});
 
@@ -142,6 +147,8 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
       fetchAppeals();
     } else if (subTab === 'forwarded') {
       fetchForwardedAppeals();
+    } else if (subTab === 'categoryRequests') {
+      fetchCategoryRequests();
     }
   }, [subTab]);
 
@@ -222,6 +229,69 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
       setLoading(false);
     }
   };
+
+  const fetchCategoryRequests = async () => {
+    try {
+      setLoading(true);
+      const [reqRes, deptRes] = await Promise.all([
+        axios.get(`${API_URL}/api/category-requests?status=pending`, {
+          headers: { 'bypass-tunnel-reminder': 'true' }, timeout: 10000,
+        }),
+        axios.get(`${API_URL}/api/departments`, {
+          headers: { 'bypass-tunnel-reminder': 'true' }, timeout: 10000,
+        }),
+      ]);
+      setCategoryRequests(reqRes.data?.requests || []);
+      setDepartments(deptRes.data || []);
+    } catch (error) {
+      console.error('Error fetching category requests:', error.message);
+      Alert.alert('Error', 'Failed to load category requests.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const renderCategoryRequestItem = ({ item }) => (
+    <TouchableOpacity
+      style={[styles.card, darkMode && styles.cardDark]}
+      onPress={() => navigation.navigate('AdminCategoryRequestDetails', { item, departments, darkMode })}
+    >
+      <View style={styles.cardHeader}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Tag size={14} color="#D97706" />
+          <View>
+             <Text style={[styles.mainText, { color: '#D97706', marginBottom: 2 }]}>{item.categoryLabel}</Text>
+             {item.categoryDescription && (
+               <Text style={[styles.subText, { color: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 13 }]} numberOfLines={2}>
+                 {item.categoryDescription}
+               </Text>
+             )}
+          </View>
+        </View>
+        <Text style={styles.time}><Clock size={10} color="#9CA3AF" /> {formatTime(item.createdAt)}</Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 10 }}>
+        <View style={[styles.reasonBadge, { backgroundColor: '#FFFBEB', borderColor: '#FCD34D', borderWidth: 1 }]}>
+          <AlertTriangle size={10} color="#D97706" />
+          <Text style={[styles.reasonText, { color: '#D97706' }]}>New Category</Text>
+        </View>
+        <View style={[styles.reasonBadge, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0', borderWidth: 1 }]}>
+          <CheckCircle size={10} color="#059669" />
+          <Text style={[styles.reasonText, { color: '#059669' }]}>{item.draftCount} Draft{item.draftCount !== 1 ? 's' : ''} Waiting</Text>
+        </View>
+      </View>
+
+      {item.sampleImage && (
+        <Image source={{ uri: item.sampleImage }} style={{ width: '100%', height: 140, borderRadius: 8, marginBottom: 10 }} resizeMode="cover" />
+      )}
+
+      <Text style={[styles.subNote, { fontStyle: 'normal', color: '#1E88E5', marginTop: 4, fontWeight: '600' }]}>
+        Tap to review and assign departments...
+      </Text>
+    </TouchableOpacity>
+  );
 
   // Ban a user permanently
   const banUser = async (citizenUid, strikeCount) => {
@@ -707,6 +777,9 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
         <TouchableOpacity style={[styles.tab, subTab === 'forwarded' && styles.tabActive]} onPress={() => setSubTab('forwarded')}>
           <Text style={[styles.tabText, subTab === 'forwarded' && styles.tabTextActive]}>Forwarded</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, subTab === 'categoryRequests' && styles.tabActive]} onPress={() => setSubTab('categoryRequests')}>
+          <Text style={[styles.tabText, subTab === 'categoryRequests' && styles.tabTextActive]}>Categories</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -719,11 +792,13 @@ export default function AdminFlagsScreen({ darkMode, defaultTab, navigation }) {
           data={
             subTab === 'reported' ? reports :
               subTab === 'appeals' ? appeals :
-                forwardedAppeals
+                subTab === 'categoryRequests' ? categoryRequests :
+                  forwardedAppeals
           }
           renderItem={({ item }) => {
             if (subTab === 'reported') return wrapPress(item, renderReportItem({ item }));
             if (subTab === 'appeals') return wrapPress(item, renderAppealItem({ item }));
+            if (subTab === 'categoryRequests') return renderCategoryRequestItem({ item });
             return renderForwardedAppealItem({ item });
           }}
           keyExtractor={item => item.id.toString()}

@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { View, Text, TouchableOpacity, Animated, StyleSheet, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
-import { Bell, X, AlertTriangle, Flag } from 'lucide-react-native';
+import { Bell, X, AlertTriangle, Flag, Tag } from 'lucide-react-native';
 
 const NotificationContext = createContext();
 const AdminNotificationContext = createContext();
@@ -808,6 +808,11 @@ export const NotificationProvider = ({ children }) => {
             const pendingAppeals = appealsResponse.data?.appeals || [];
             const currentAppealIds = pendingAppeals.map(a => a.id);
 
+            // Fetch category requests
+            const categoryRequestsResponse = await api.get('/category-requests?status=pending');
+            const pendingCategoryRequests = categoryRequestsResponse.data?.requests || [];
+            const currentCategoryRequestIds = pendingCategoryRequests.map(c => c.id);
+
             // Update unread counts
             setUnreadReportsCount(pendingReports.length);
             setUnreadAppealsCount(pendingAppeals.length);
@@ -867,8 +872,34 @@ export const NotificationProvider = ({ children }) => {
             }
             await AsyncStorage.setItem('adminKnownAppealIds', JSON.stringify(currentAppealIds));
 
+            // --- TRACK NEW CATEGORY REQUESTS BY ID ---
+            const lastCategoryRequestIdsStr = await AsyncStorage.getItem('adminKnownCategoryRequestIds');
+            let lastCategoryRequestIds = lastCategoryRequestIdsStr ? JSON.parse(lastCategoryRequestIdsStr) : [];
+
+            const newCategoryRequestEntries = pendingCategoryRequests.filter(c => !lastCategoryRequestIds.includes(c.id));
+            if (newCategoryRequestEntries.length > 0) {
+                console.log('AdminPolling: Detected', newCategoryRequestEntries.length, 'new category requests');
+                newCategoryRequestEntries.forEach((request, index) => {
+                    if (userRoleRef.current !== 'admin') return;
+                    const notifData = {
+                        uniqId: `admin_category_request_${request.id}_${Date.now()}`,
+                        type: 'category_request',
+                        title: 'New Category Request',
+                        message: `A new category "${request.categoryLabel}" has been detected`,
+                        icon: Tag,
+                        color: '#D97706',
+                        timestamp: new Date(request.createdAt).toISOString(),
+                        read: false,
+                        requestId: request.id
+                    };
+                    showAdminNotification(notifData);
+                    addToAdminHistory(notifData);
+                });
+            }
+            await AsyncStorage.setItem('adminKnownCategoryRequestIds', JSON.stringify(currentCategoryRequestIds));
+
             // Maintenance: Update stored counts for any UI that might still need them
-            const newCounts = { reports: pendingReports.length, appeals: pendingAppeals.length };
+            const newCounts = { reports: pendingReports.length, appeals: pendingAppeals.length, categoryRequests: pendingCategoryRequests.length };
             setLastCounts(newCounts);
             lastCountsRef.current = newCounts;
             await saveLastCounts(newCounts);

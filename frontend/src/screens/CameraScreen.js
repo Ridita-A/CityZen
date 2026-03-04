@@ -2,14 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { Camera, Image as GalleryIcon, Library, RefreshCcw } from 'lucide-react-native';
+import { Camera, Image as GalleryIcon, Library, RefreshCcw, ArrowRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import NetInfo from '@react-native-community/netinfo';
 import { useComplaint } from '../context/ComplaintContext';
-import { saveOfflineReport } from '../utils/offlineStorage';
+import { saveOfflineReport, deleteReport, initStorage } from '../utils/offlineStorage';
 
 export default function CameraScreen({ navigation }) {
     const {
         setImages,
+        setLocation,
+        setLocationTime,
         resetState,
     } = useComplaint();
 
@@ -18,13 +21,24 @@ export default function CameraScreen({ navigation }) {
     const [isCapturing, setIsCapturing] = useState(false);
     const cameraRef = useRef(null);
     const [previewUri, setPreviewUri] = useState(null);
+    const [capturedLocation, setCapturedLocation] = useState(null);
+    const [currentReportId, setCurrentReportId] = useState(null);
+    const [isConnected, setIsConnected] = useState(true);
 
     useEffect(() => {
         resetState();
+        initStorage(); // Trigger cleanup and ensure directory exists
+        
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsConnected(state.isConnected);
+        });
+
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
             setLocationPermission(status === 'granted');
         })();
+
+        return () => unsubscribe();
     }, []);
 
     if (!permission) {
@@ -103,9 +117,10 @@ export default function CameraScreen({ navigation }) {
             }
 
             // 3. Save Offline
-            await saveOfflineReport(photo.uri, location);
-            setPreviewUri(photo.uri);
-            Alert.alert("Saved Successfully", "Image and Location saved. You can submit it from the Offline Gallery when you are back online.");
+            const report = await saveOfflineReport(photo.uri, location);
+            setPreviewUri(report.imageUri);
+            setCapturedLocation(location);
+            setCurrentReportId(report.id);
             
         } catch (error) {
             console.error("Global Capture error:", error);
@@ -118,6 +133,57 @@ export default function CameraScreen({ navigation }) {
             }
         } finally {
             setIsCapturing(false);
+        }
+    };
+
+    const handleRetake = async () => {
+        if (currentReportId) {
+            try {
+                await deleteReport(currentReportId);
+            } catch (err) {
+                console.warn("Failed to delete retaken report:", err);
+            }
+        }
+        setPreviewUri(null);
+        setCurrentReportId(null);
+        setCapturedLocation(null);
+    };
+
+    const handleProceed = async () => {
+        if (!isConnected) {
+            Alert.alert("Offline", "You need internet to proceed with the submission flow.");
+            return;
+        }
+
+        if (previewUri && capturedLocation) {
+            let locationData = {
+                latitude: capturedLocation.coords.latitude,
+                longitude: capturedLocation.coords.longitude,
+                fullAddress: `${capturedLocation.coords.latitude.toFixed(6)}, ${capturedLocation.coords.longitude.toFixed(6)}`
+            };
+
+            try {
+                const [addr] = await Location.reverseGeocodeAsync({ 
+                    latitude: capturedLocation.coords.latitude, 
+                    longitude: capturedLocation.coords.longitude 
+                });
+                if (addr) {
+                    const areaName = addr.name || addr.street || addr.subregion || addr.city || 'Unknown area';
+                    const district = addr.district || addr.city || '';
+                    const region = addr.region || '';
+                    locationData.fullAddress = `${areaName}, ${district}, ${region}`;
+                    locationData.areaName = areaName;
+                    locationData.district = district;
+                    locationData.region = region;
+                }
+            } catch (err) {
+                console.warn('Reverse geocode failed', err);
+            }
+
+            setImages([previewUri]);
+            setLocation(locationData);
+            setLocationTime(new Date(capturedLocation.timestamp).toLocaleString());
+            navigation.navigate('SubmitComplaintDetails');
         }
     };
 
@@ -166,38 +232,55 @@ export default function CameraScreen({ navigation }) {
                 ) : (
                     <View style={styles.previewContainer}>
                         <Image source={{ uri: previewUri }} style={styles.previewImage} />
-                        <TouchableOpacity 
-                            style={styles.retakeButton} 
-                            onPress={() => setPreviewUri(null)}
-                        >
-                            <RefreshCcw size={24} color="white" />
-                            <Text style={styles.retakeText}>Retake</Text>
-                        </TouchableOpacity>
                     </View>
                 )}
             </View>
 
             <View style={styles.footer}>
-                <TouchableOpacity onPress={handleLibraryPick} style={styles.sideButton}>
-                    <Library size={30} color="white" />
-                    <Text style={styles.sideButtonText}>Library</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                    onPress={takePicture} 
-                    style={[styles.cameraButton, isCapturing && styles.disabledButton]}
-                    disabled={isCapturing}
-                >
-                    <View style={styles.innerCameraButton} />
-                </TouchableOpacity>
+                {!previewUri ? (
+                    <>
+                        <View style={styles.sideButtonContainer}>
+                            <TouchableOpacity onPress={handleLibraryPick} style={styles.sideButton}>
+                                <Library size={30} color="white" />
+                                <Text style={styles.sideButtonText}>Library</Text>
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <View style={styles.cameraButtonContainer}>
+                            <TouchableOpacity 
+                                onPress={takePicture} 
+                                style={[styles.cameraButton, isCapturing && styles.disabledButton]}
+                                disabled={isCapturing}
+                            >
+                                <View style={styles.innerCameraButton} />
+                            </TouchableOpacity>
+                        </View>
 
-                <TouchableOpacity 
-                    onPress={() => navigation.navigate('OfflineGallery')} 
-                    style={styles.sideButton}
-                >
-                    <GalleryIcon size={30} color="white" />
-                    <Text style={styles.sideButtonText}>Offline Reports</Text>
-                </TouchableOpacity>
+                        <View style={styles.sideButtonContainer}>
+                            <TouchableOpacity 
+                                onPress={() => navigation.navigate('OfflineGallery')} 
+                                style={styles.sideButton}
+                            >
+                                <GalleryIcon size={30} color="white" />
+                                <Text style={styles.sideButtonText}>Offline Reports</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                ) : (
+                    <View style={styles.actionButtonContainer}>
+                        <TouchableOpacity onPress={handleRetake} style={styles.actionButton}>
+                            <RefreshCcw size={30} color="white" />
+                            <Text style={styles.sideButtonText}>Retake</Text>
+                        </TouchableOpacity>
+                        
+                        <View style={{ width: 80 }} />
+
+                        <TouchableOpacity onPress={handleProceed} style={styles.actionButton}>
+                            <ArrowRight size={30} color="white" />
+                            <Text style={styles.sideButtonText}>Proceed</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </View>
     );
@@ -251,8 +334,28 @@ const styles = StyleSheet.create({
         backgroundColor: '#1E88E5',
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-around',
+        justifyContent: 'center',
         paddingBottom: 20,
+    },
+    sideButtonContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cameraButtonContainer: {
+        width: 100,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    actionButtonContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+    },
+    actionButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     cameraButton: {
         width: 80,
@@ -277,22 +380,6 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 12,
         marginTop: 4,
-    },
-    retakeButton: {
-        position: 'absolute',
-        bottom: 20,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 25,
-        alignItems: 'center',
-    },
-    retakeText: {
-        color: 'white',
-        marginLeft: 10,
-        fontWeight: 'bold',
     },
     message: {
         textAlign: 'center',

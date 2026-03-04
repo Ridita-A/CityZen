@@ -36,6 +36,12 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         setAiResult,
         setTitle,
         setDescription,
+        unknownCategoryLabel,
+        setUnknownCategoryLabel,
+        unknownCategoryDescription,
+        setUnknownCategoryDescription,
+        isDraftMode,
+        setIsDraftMode,
     } = useComplaint();
 
     const CONFIDENCE_THRESHOLD = 75;
@@ -385,11 +391,31 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         if (aiResult.confidence < CONFIDENCE_THRESHOLD) return;
         if (categories.length === 0) return;
 
-        // Directly use aiResult.id to find the matching category
-        const matchedCategory = categories.find(cat => cat.id === aiResult.id);
+        // If the AI flagged this as a new/unknown category, enter draft mode
+        if (aiResult.is_new_category === true) {
+            setUnknownCategoryLabel(aiResult.label);
+            setUnknownCategoryDescription(aiResult.category_description || '');
+            setIsDraftMode(true);
+            setSelectedCategory(null);
+            return;
+        }
+
+        // Try to match by ID first, then by name as fallback
+        const matchedCategory =
+            categories.find(cat => cat.id === aiResult.id) ||
+            categories.find(cat => cat.name?.toLowerCase() === aiResult.label?.toLowerCase());
 
         if (matchedCategory) {
             setSelectedCategory(matchedCategory);
+            setIsDraftMode(false);
+            setUnknownCategoryLabel(null);
+            setUnknownCategoryDescription(null);
+        } else if (aiResult.label && aiResult.label !== 'No Issue') {
+            // Label returned but no DB match — treat as unknown
+            setUnknownCategoryLabel(aiResult.label);
+            setUnknownCategoryDescription(aiResult.category_description || '');
+            setIsDraftMode(true);
+            setSelectedCategory(null);
         }
     }, [aiResult, categories]);
 
@@ -621,8 +647,20 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
     const handleNext = () => {
         const newErrors = {};
         if (images.length === 0) newErrors.image = 'Evidence photos are mandatory.';
-        if (!selectedCategory) newErrors.category = 'Category is required.';
         if (!location?.latitude || !location?.longitude) newErrors.location = 'GPS location is required.';
+
+        // In draft mode, skip category requirement — navigate to draft submit screen
+        if (isDraftMode) {
+            if (Object.keys(newErrors).length > 0) {
+                setErrors(newErrors);
+                Alert.alert('Missing Info', 'Please fill in all required fields.');
+                return;
+            }
+            navigation.navigate('DraftComplaintSubmit');
+            return;
+        }
+
+        if (!selectedCategory) newErrors.category = 'Category is required.';
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
@@ -660,6 +698,30 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
                             <Text style={{ marginLeft: 8, color: "#1E88E5", fontSize: 12 }}>
                                 AI auto-filled this report. Please review before submitting.
                             </Text>
+                        </View>
+                    )}
+
+                    {/* Unknown category amber banner */}
+                    {isDraftMode && unknownCategoryLabel && (
+                        <View style={{
+                            backgroundColor: "#FFFBEB",
+                            borderWidth: 1,
+                            borderColor: "#FCD34D",
+                            padding: 12,
+                            borderRadius: 8,
+                            marginBottom: 12,
+                            flexDirection: "row",
+                            alignItems: "flex-start",
+                        }}>
+                            <Sparkles size={16} color="#D97706" style={{ marginTop: 1 }} />
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={{ color: "#92400E", fontWeight: "700", fontSize: 12, marginBottom: 2 }}>
+                                    New Issue Type Detected
+                                </Text>
+                                <Text style={{ color: "#78350F", fontSize: 12, lineHeight: 18 }}>
+                                    AI identified "{unknownCategoryLabel}" — not yet in our system. Your complaint will be saved as a draft for admin review.
+                                </Text>
+                            </View>
                         </View>
                     )}
 
@@ -733,13 +795,14 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
 
                     <Text style={[styles.label, darkMode && styles.textWhite]}>Category <Text style={styles.req}>*</Text></Text>
                     <TouchableOpacity
-                        onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-                        style={[styles.dropdownHeader, darkMode && styles.inputDark, errors.category && styles.errorBorder]}
+                        onPress={() => !isDraftMode && setIsDropdownOpen(!isDropdownOpen)}
+                        disabled={isDraftMode}
+                        style={[styles.dropdownHeader, darkMode && styles.inputDark, errors.category && styles.errorBorder, isDraftMode && { backgroundColor: darkMode ? '#374151' : '#F3F4F6', borderColor: darkMode ? '#4B5563' : '#E5E7EB' }]}
                     >
-                        <Text style={[styles.dropdownText, !selectedCategory && styles.placeholderText, darkMode && styles.textWhite]}>
-                            {selectedCategory ? selectedCategory.name : "Select a Category"}
+                        <Text style={[styles.dropdownText, (!selectedCategory && !isDraftMode) && styles.placeholderText, darkMode && styles.textWhite, isDraftMode && { color: darkMode ? '#9CA3AF' : '#6B7280' }]}>
+                            {isDraftMode ? unknownCategoryLabel : (selectedCategory ? selectedCategory.name : "Select a Category")}
                         </Text>
-                        {isDropdownOpen ? <ChevronUp size={20} color="#6B7280" /> : <ChevronDown size={20} color="#6B7280" />}
+                        {isDraftMode ? null : (isDropdownOpen ? <ChevronUp size={20} color="#6B7280" /> : <ChevronDown size={20} color="#6B7280" />)}
                     </TouchableOpacity>
 
                     {isDropdownOpen && (

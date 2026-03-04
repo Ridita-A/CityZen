@@ -9,6 +9,35 @@ export const initStorage = async () => {
   if (!dirInfo.exists) {
     await FileSystem.makeDirectoryAsync(REPORTS_DIR, { intermediates: true });
   }
+  await cleanupStaleReports();
+};
+
+export const cleanupStaleReports = async () => {
+    try {
+        const metadata = await AsyncStorage.getItem(METADATA_KEY);
+        if (!metadata) return;
+
+        const reports = JSON.parse(metadata);
+        const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        const staleReports = reports.filter(r => (now - r.createdAt) > ONE_WEEK_MS);
+        const freshReports = reports.filter(r => (now - r.createdAt) <= ONE_WEEK_MS);
+
+        if (staleReports.length > 0) {
+            console.log(`Cleaning up ${staleReports.length} stale offline reports.`);
+            for (const report of staleReports) {
+                try {
+                    await FileSystem.deleteAsync(report.imageUri, { idempotent: true });
+                } catch (e) {
+                    console.warn(`Failed to delete stale image: ${report.imageUri}`, e);
+                }
+            }
+            await AsyncStorage.setItem(METADATA_KEY, JSON.stringify(freshReports));
+        }
+    } catch (err) {
+        console.error("Error during stale report cleanup:", err);
+    }
 };
 
 export const saveOfflineReport = async (imageUri, location) => {

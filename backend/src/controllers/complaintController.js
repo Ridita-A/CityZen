@@ -510,6 +510,11 @@ exports.getDepartments = async (_req, res) => {
   try {
     const departments = await AuthorityCompany.findAll({
       attributes: ['id', 'name', 'description'],
+      include: [{
+        model: sequelize.models.AuthorityCompanyAreas,
+        attributes: ['id', 'name', 'latitude', 'longitude', 'radius']
+      }],
+      order: [['name', 'ASC']]
     });
     res.json(departments);
   } catch (error) {
@@ -522,27 +527,156 @@ exports.getDepartments = async (_req, res) => {
 
 // CREATE DEPARTMENT
 exports.createDepartment = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const name = req.body?.name?.trim();
-    const description = req.body?.description?.trim();
+    const description = req.body?.description?.trim() || null;
+    const areas = req.body?.areas || [];
 
     if (!name) {
+      await t.rollback();
       return res.status(400).json({ message: 'Department name is required.' });
     }
 
-    const [department, created] = await AuthorityCompany.findOrCreate({
-      where: { name },
-      defaults: { description },
+    // Check if department already exists
+    const existing = await AuthorityCompany.findOne({ where: { name } });
+    if (existing) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Department with this name already exists.' });
+    }
+
+    const department = await AuthorityCompany.create(
+      { name, description },
+      { transaction: t }
+    );
+
+    // Create areas if provided
+    if (areas.length > 0) {
+      const areaRecords = areas.map(area => ({
+        authorityCompanyId: department.id,
+        name: area.name,
+        latitude: area.latitude,
+        longitude: area.longitude,
+        radius: area.radius
+      }));
+      await sequelize.models.AuthorityCompanyAreas.bulkCreate(areaRecords, { transaction: t });
+    }
+
+    await t.commit();
+
+    // Fetch the created department with areas
+    const result = await AuthorityCompany.findByPk(department.id, {
+      include: [{
+        model: sequelize.models.AuthorityCompanyAreas,
+        attributes: ['id', 'name', 'latitude', 'longitude', 'radius']
+      }]
     });
 
-    return res.status(created ? 201 : 200).json({
-      message: created ? 'Department created successfully.' : 'Department already exists.',
-      department,
+    return res.status(201).json({
+      message: 'Department created successfully.',
+      department: result,
     });
   } catch (error) {
+    await t.rollback();
     console.error('Create Department Error:', error.message);
     res.status(500).json({
       message: 'Server error while creating department.',
+    });
+  }
+};
+
+// UPDATE DEPARTMENT
+exports.updateDepartment = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const name = req.body?.name?.trim();
+    const description = req.body?.description?.trim() || null;
+    const areas = req.body?.areas || [];
+
+    if (!id) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Department id is required.' });
+    }
+
+    const department = await AuthorityCompany.findByPk(id);
+    if (!department) {
+      await t.rollback();
+      return res.status(404).json({ message: 'Department not found.' });
+    }
+
+    // Check if name is being changed and if new name already exists
+    if (name && name !== department.name) {
+      const existing = await AuthorityCompany.findOne({ where: { name } });
+      if (existing) {
+        await t.rollback();
+        return res.status(400).json({ message: 'Department with this name already exists.' });
+      }
+    }
+
+    // Update department
+    await department.update(
+      { name: name || department.name, description },
+      { transaction: t }
+    );
+
+    // Handle areas - delete removed ones and upsert provided ones
+    const existingAreaIds = areas.filter(a => a.id).map(a => a.id);
+    
+    // Delete areas not in the new list
+    await sequelize.models.AuthorityCompanyAreas.destroy({
+      where: {
+        authorityCompanyId: id,
+        id: { [Op.notIn]: existingAreaIds }
+      },
+      transaction: t
+    });
+
+    // Update existing areas and create new ones
+    for (const area of areas) {
+      if (area.id) {
+        await sequelize.models.AuthorityCompanyAreas.update(
+          {
+            name: area.name,
+            latitude: area.latitude,
+            longitude: area.longitude,
+            radius: area.radius
+          },
+          { where: { id: area.id }, transaction: t }
+        );
+      } else {
+        await sequelize.models.AuthorityCompanyAreas.create(
+          {
+            authorityCompanyId: id,
+            name: area.name,
+            latitude: area.latitude,
+            longitude: area.longitude,
+            radius: area.radius
+          },
+          { transaction: t }
+        );
+      }
+    }
+
+    await t.commit();
+
+    // Fetch updated department with areas
+    const result = await AuthorityCompany.findByPk(id, {
+      include: [{
+        model: sequelize.models.AuthorityCompanyAreas,
+        attributes: ['id', 'name', 'latitude', 'longitude', 'radius']
+      }]
+    });
+
+    return res.json({
+      message: 'Department updated successfully.',
+      department: result,
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error('Update Department Error:', error.message);
+    res.status(500).json({
+      message: 'Server error while updating department.',
     });
   }
 };

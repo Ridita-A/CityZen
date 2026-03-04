@@ -18,6 +18,7 @@ router.get('/complaints/recommend-authorities', complaintController.getRecommend
 // Departments (Authority companies)
 router.get('/departments', complaintController.getDepartments);
 router.post('/departments', complaintController.createDepartment);
+router.put('/departments/:id', complaintController.updateDepartment);
 router.delete('/departments/:id', complaintController.deleteDepartment);
 
 // Admin KPIs

@@ -631,9 +631,15 @@ export const NotificationProvider = ({ children }) => {
             complaints.forEach(c => {
                 newStatuses[c.id] = c.currentStatus;
 
-                // If we have a previous status and it's different
-                if (previousStatuses[c.id] && previousStatuses[c.id] !== c.currentStatus) {
-                    //console.log(`NotificationContext: Status changed for complaint ${c.id}: ${previousStatuses[c.id]} -> ${c.currentStatus}`);
+                // Trigger if status changed from a known previous state
+                const isStatusChanged = previousStatuses[c.id] && previousStatuses[c.id] !== c.currentStatus;
+                
+                // OR trigger if it's a recently rejected complaint (within 24 hours) we haven't seen before
+                const isRecentlyRejected = !previousStatuses[c.id] && 
+                                           c.currentStatus === 'rejected' && 
+                                           (new Date() - new Date(c.createdAt)) < 24 * 60 * 60 * 1000;
+
+                if (isStatusChanged || isRecentlyRejected) {
                     changedComplaints.push(c);
                 }
             });
@@ -667,8 +673,10 @@ export const NotificationProvider = ({ children }) => {
                     const notifData = {
                         id: changedComplaint.id, // Complaint ID
                         uniqId: `${changedComplaint.id}_${Date.now()}`, // Unique ID for list
-                        title: 'Status Update',
-                        message: `Complaint #${changedComplaint.id} is now ${readableStatus}`,
+                        title: changedComplaint.currentStatus === 'rejected' ? 'Complaint Rejected' : 'Status Update',
+                        message: changedComplaint.currentStatus === 'rejected' && changedComplaint.statusNotes
+                            ? `Complaint #${changedComplaint.id} was rejected: ${changedComplaint.statusNotes}`
+                            : `Complaint #${changedComplaint.id} is now ${readableStatus}`,
                         timestamp: new Date().toISOString(),
                         complaint: changedComplaint,
                         read: false,

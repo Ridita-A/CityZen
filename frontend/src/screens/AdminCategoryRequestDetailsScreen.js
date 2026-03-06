@@ -112,7 +112,7 @@ export default function AdminCategoryRequestDetailsScreen({ route, navigation })
           <View style={styles.cardHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Tag size={18} color="#D97706" />
-              <View>
+              <View style={{ flex: 1 }}>
                  <Text style={[styles.mainText, { color: '#D97706', marginBottom: 2, fontSize: 18 }]}>{item.categoryLabel}</Text>
                  {item.categoryDescription && (
                    <Text style={[styles.subText, { color: darkMode ? '#9CA3AF' : '#6B7280', fontSize: 14 }]} numberOfLines={3}>

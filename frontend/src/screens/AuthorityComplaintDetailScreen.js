@@ -45,6 +45,7 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
     const [images, setImages] = useState([]);
     const [isVerifying, setIsVerifying] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [nowTs, setNowTs] = useState(Date.now());
 
     const rejectionShortcuts = ["Inaccurate Location", "Duplicate Report", "Private Property", "Outside Jurisdiction"];
 
@@ -73,6 +74,11 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
             fetchComplaintData();
         }, [fetchComplaintData])
     );
+
+    useEffect(() => {
+        const timerId = setInterval(() => setNowTs(Date.now()), 1000);
+        return () => clearInterval(timerId);
+    }, []);
 
     const openGoogleMaps = () => {
         if (!complaint) return;
@@ -265,7 +271,8 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
         closed: 3,
         rejected: 0,
         appealed: 2,
-        completed: 3
+        completed: 3,
+        critical_failure: 2,
     };
     const currentStep = statusToStepIndex[(complaint?.currentStatus || 'pending').toLowerCase()] ?? 0;
 
@@ -291,6 +298,56 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
     }
 
     const bumpCount = Number(complaint?.bumpCount || 0);
+    const isEscalated = Boolean(complaint?.forwardedByAdmin);
+    const getDeadlineInfo = (item) => {
+        const hasServerActiveDeadline = item?.adminDeadlineStatus === 'active' && item?.adminDeadlineAt;
+        let deadlineMs = null;
+        let showMissed = item?.adminDeadlineStatus === 'missed';
+
+        if (hasServerActiveDeadline) {
+            deadlineMs = new Date(item.adminDeadlineAt).getTime();
+        } else {
+            const thresholdByStatus = { pending: 7, accepted: 10, in_progress: 14 };
+            const statusKey = String(item?.currentStatus || '').toLowerCase().replace(/\s+/g, '_');
+            const thresholdDays = thresholdByStatus[statusKey];
+
+            if (!thresholdDays) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            const lastActivity = item?.lastAuthorityActivityAt || item?.updatedAt || item?.createdAt;
+            const lastActivityMs = lastActivity ? new Date(lastActivity).getTime() : NaN;
+            if (!Number.isFinite(lastActivityMs)) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            const staleTriggerMs = lastActivityMs + thresholdDays * 24 * 60 * 60 * 1000;
+            if (nowTs < staleTriggerMs) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            deadlineMs = staleTriggerMs + 48 * 60 * 60 * 1000;
+            if (nowTs >= deadlineMs) {
+                showMissed = true;
+            }
+        }
+
+        if (showMissed) {
+            return { showActive: false, showMissed: true, label: null };
+        }
+
+        const remainingMs = Math.max(0, deadlineMs - nowTs);
+        const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        const remainingSeconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+
+        return {
+            showActive: true,
+            showMissed: false,
+            label: `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`,
+        };
+    };
+    const deadlineInfo = getDeadlineInfo(complaint);
 
     return (
         <View style={[styles.container, darkMode && styles.darkContainer]}>
@@ -341,6 +398,33 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
 
                         <Text style={[styles.description, darkMode && styles.textGray]}>{complaint?.description || 'No description provided.'}</Text>
                     </View>
+
+                    {(isEscalated || deadlineInfo.showActive || deadlineInfo.showMissed) && (
+                        <View style={[styles.card, styles.escalationCard, darkMode && styles.cardDark]}>
+                            <View style={styles.sectionHeaderRow}>
+                                <AlertTriangle size={18} color="#B91C1C" />
+                                <Text style={[styles.sectionTitle, { color: '#B91C1C' }]}>Admin Escalation Active</Text>
+                            </View>
+                            <Text style={[styles.escalationText, darkMode && styles.textWhite]}>
+                                {complaint?.authorityEscalationWarning || `Attention: Complaint #${complaint?.id} has high community interest. Immediate action required.`}
+                            </Text>
+                            <Text style={[styles.escalationSubText, darkMode && styles.textGray]}>
+                                Note: You must upload a photo or change status to clear this alert. Text-only comments will not stop the timer.
+                            </Text>
+
+                            {deadlineInfo.showActive ? (
+                                <View style={styles.deadlineBox}>
+                                    <Text style={styles.deadlineLabel}>48-HOUR RESPONSE DEADLINE</Text>
+                                    <Text style={styles.deadlineClock}>{deadlineInfo.label}</Text>
+                                </View>
+                            ) : deadlineInfo.showMissed ? (
+                                <View style={[styles.deadlineBox, { backgroundColor: '#7F1D1D' }]}>
+                                    <Text style={styles.deadlineLabel}>DEADLINE MISSED</Text>
+                                    <Text style={styles.deadlineClock}>CRITICAL FAILURE LOGGED</Text>
+                                </View>
+                            ) : null}
+                        </View>
+                    )}
 
                     {/* Status Action Buttons */}
                     {complaint?.currentStatus !== 'resolved' && complaint?.currentStatus !== 'completed' && complaint?.currentStatus !== 'rejected' && (
@@ -416,16 +500,26 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                             <Text style={[styles.sectionTitle, darkMode && styles.textWhite]}>Department Progress</Text>
                         </View>
 
-                        {complaint?.statusNotes ? (
-                            <View style={styles.updateSection}>
-                                <Text style={styles.label}>OFFICIAL REMARKS</Text>
-                                <View style={[styles.remarkBox, { backgroundColor: darkMode ? '#374151' : '#F3F4F6' }]}>
-                                    <Text style={[styles.remarkText, darkMode && styles.textWhite]}>{complaint.statusNotes}</Text>
+                        {(() => {
+                            const filteredNotes = complaint?.statusNotes
+                                ? String(complaint.statusNotes)
+                                    .split('\n')
+                                    .filter(line => !line.includes('[AUTO-ESCALATION]') && !line.includes('[SYSTEM'))
+                                    .join('\n')
+                                    .trim()
+                                : null;
+                            
+                            return filteredNotes ? (
+                                <View style={styles.updateSection}>
+                                    <Text style={styles.label}>OFFICIAL REMARKS</Text>
+                                    <View style={[styles.remarkBox, { backgroundColor: darkMode ? '#374151' : '#F3F4F6' }]}>
+                                        <Text style={[styles.remarkText, darkMode && styles.textWhite]}>{filteredNotes}</Text>
+                                    </View>
                                 </View>
-                            </View>
-                        ) : (
-                            <Text style={styles.noInfoText}>No official remarks recorded yet.</Text>
-                        )}
+                            ) : (
+                                <Text style={styles.noInfoText}>No official remarks recorded yet.</Text>
+                            );
+                        })()}
 
                         {/* Work Evidence Images */}
                         {complaint?.images?.filter(img => img.type === 'progress' || img.type === 'resolution').length > 0 && (
@@ -588,7 +682,7 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                         <Text style={[styles.label, { marginTop: 16 }]}>INTERNAL REMARKS</Text>
                         <TextInput
                             style={[styles.modalInput, darkMode && styles.inputDark]}
-                            placeholder="Add notes for this update..."
+                            placeholder="Note: You must upload a photo or change status to clear this alert."
                             multiline
                             value={note}
                             onChangeText={setNote}
@@ -693,6 +787,20 @@ const styles = StyleSheet.create({
     evidenceBadge: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(30, 136, 229, 0.8)', paddingVertical: 2, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
     evidenceBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold', textAlign: 'center' },
     noInfoText: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
+
+    escalationCard: { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
+    escalationText: { fontSize: 14, color: '#7F1D1D', lineHeight: 20, marginBottom: 8 },
+    escalationSubText: { fontSize: 12, color: '#6B7280', lineHeight: 18 },
+    deadlineBox: {
+        marginTop: 12,
+        backgroundColor: '#991B1B',
+        borderRadius: 12,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        alignItems: 'center'
+    },
+    deadlineLabel: { color: '#FECACA', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+    deadlineClock: { color: 'white', fontSize: 24, fontWeight: '800', marginTop: 4 },
 
     timeline: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 10 },
     stepContainer: { alignItems: 'center', flex: 1, position: 'relative' },

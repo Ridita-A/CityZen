@@ -14,6 +14,12 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); // 0-11
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [isGenerating, setIsGenerating] = useState(false);
+    const [nowTs, setNowTs] = useState(Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNowTs(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     const sortComplaintsByBump = (items = []) => {
         return [...items].sort((a, b) => {
@@ -48,7 +54,7 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
         years.push(y);
     }
 
-    const StatusBadge = ({ status, bumpCount }) => {
+    const StatusBadge = ({ status, bumpCount, responseDelayWarningLogged }) => {
         const s = status ? status.toLowerCase() : '';
         const isResolved = ['resolved', 'closed', 'completed'].includes(s);
         const isPending = s === 'pending';
@@ -71,6 +77,11 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
                 {Number(bumpCount || 0) > 0 && (
                     <View style={styles.bumpBadge}>
                         <Text style={styles.bumpBadgeText}>BUMPED {Number(bumpCount)}x</Text>
+                    </View>
+                )}
+                {Boolean(responseDelayWarningLogged) && (
+                    <View style={styles.delayBadge}>
+                        <Text style={styles.delayBadgeText}>RESPONSE DELAY WARNING</Text>
                     </View>
                 )}
                 <View style={[styles.badge, { backgroundColor: bg }]}>
@@ -346,6 +357,55 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
         </Modal>
     );
 
+    const getDeadlineInfo = (item) => {
+        const hasServerActiveDeadline = item?.adminDeadlineStatus === 'active' && item?.adminDeadlineAt;
+        let deadlineMs = null;
+        let showMissed = item?.adminDeadlineStatus === 'missed';
+
+        if (hasServerActiveDeadline) {
+            deadlineMs = new Date(item.adminDeadlineAt).getTime();
+        } else {
+            const thresholdByStatus = { pending: 7, accepted: 10, in_progress: 14 };
+            const statusKey = String(item?.currentStatus || '').toLowerCase().replace(/\s+/g, '_');
+            const thresholdDays = thresholdByStatus[statusKey];
+
+            if (!thresholdDays) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            const lastActivity = item?.lastAuthorityActivityAt || item?.updatedAt || item?.createdAt;
+            const lastActivityMs = lastActivity ? new Date(lastActivity).getTime() : NaN;
+            if (!Number.isFinite(lastActivityMs)) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            const staleTriggerMs = lastActivityMs + thresholdDays * 24 * 60 * 60 * 1000;
+            if (nowTs < staleTriggerMs) {
+                return { showActive: false, showMissed: false, label: null };
+            }
+
+            deadlineMs = nowTs + 48 * 60 * 60 * 1000;
+            if (nowTs >= deadlineMs) {
+                showMissed = true;
+            }
+        }
+
+        if (showMissed) {
+            return { showActive: false, showMissed: true, label: null };
+        }
+
+        const remainingMs = Math.max(0, deadlineMs - nowTs);
+        const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        const remainingSeconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+
+        return {
+            showActive: true,
+            showMissed: false,
+            label: `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`,
+        };
+    };
+
     return (
         <View style={[styles.container, darkMode && styles.darkContainer]}>
             <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
@@ -389,6 +449,20 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
                         onPress={() => navigation.navigate('AuthorityComplaintDetail', { complaintId: item.id, initialData: item })}
                         activeOpacity={0.7}
                     >
+                        {(() => {
+                            const deadlineInfo = getDeadlineInfo(item);
+                            if (!deadlineInfo.showActive && !deadlineInfo.showMissed) return null;
+
+                            return (
+                                <View style={[styles.deadlineRow, deadlineInfo.showMissed && styles.deadlineRowMissed]}>
+                                    <Clock size={12} color={deadlineInfo.showMissed ? '#FFFFFF' : '#7F1D1D'} />
+                                    <Text style={[styles.deadlineLabel, deadlineInfo.showMissed && styles.deadlineLabelMissed]}>
+                                        {deadlineInfo.showMissed ? 'DEADLINE MISSED' : '48-HOUR RESPONSE DEADLINE'}
+                                    </Text>
+                                    {deadlineInfo.showActive && <Text style={styles.deadlineClock}>{deadlineInfo.label}</Text>}
+                                </View>
+                            );
+                        })()}
                         <View style={styles.cardHeader}>
                             <View style={[styles.iconContainer, darkMode && styles.iconContainerDark]}>
                                 <StatusIcon status={item.currentStatus} />
@@ -401,7 +475,11 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
                                     {item.description || 'No description provided'}
                                 </Text>
                             </View>
-                            <StatusBadge status={item.currentStatus} bumpCount={item.bumpCount} />
+                            <StatusBadge
+                                status={item.currentStatus}
+                                bumpCount={item.bumpCount}
+                                responseDelayWarningLogged={item.responseDelayWarningLogged || item.forwardedByAdmin}
+                            />
                         </View>
 
                         <View style={[styles.cardFooter, darkMode && styles.cardFooterDark]}>
@@ -507,6 +585,16 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start'
     },
     bumpBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
+    delayBadge: {
+        backgroundColor: '#FEE2E2',
+        borderWidth: 1,
+        borderColor: '#EF4444',
+        borderRadius: 999,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        alignSelf: 'flex-start'
+    },
+    delayBadgeText: { fontSize: 9, fontWeight: '800', color: '#991B1B' },
     badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
     badgeText: { fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
     cardFooter: {
@@ -520,6 +608,33 @@ const styles = StyleSheet.create({
     cardFooterDark: { borderTopColor: '#374151' },
     footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     footerText: { fontSize: 12, color: '#9CA3AF' },
+    deadlineRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
+        backgroundColor: '#FEE2E2',
+        borderBottomWidth: 1,
+        borderBottomColor: '#FCA5A5'
+    },
+    deadlineRowMissed: {
+        backgroundColor: '#7F1D1D',
+        borderBottomColor: '#B91C1C'
+    },
+    deadlineLabel: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: '#991B1B'
+    },
+    deadlineLabelMissed: { color: '#FFFFFF' },
+    deadlineClock: {
+        fontSize: 12,
+        fontWeight: '900',
+        color: '#7F1D1D'
+    },
 
     // PDF Modal
     modalOverlay: {

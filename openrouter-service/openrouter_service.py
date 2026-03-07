@@ -2,7 +2,7 @@ import os
 import uvicorn
 import json
 import base64
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -177,6 +177,240 @@ Output JSON schema:
             "confidence": confidence,
             "is_new_category": is_new_category,
             "category_description": category_description
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------- Evidence Verification (LLM) --------------------
+
+@app.post("/verify_evidence")
+async def verify_evidence(
+    image: UploadFile = File(...),
+    complaint_category: str = Form(...),
+    complaint_title: str = Form(...),
+    complaint_description: str = Form(""),
+    evidence_type: str = Form("authority"),  # "authority_progress", "authority_resolution", or "citizen_evidence"
+    original_images: str = Form("[]")  # JSON array of base64-encoded original complaint images (optional)
+):
+    """
+    Verifies whether an evidence image is relevant and genuine for a complaint.
+    For authority: compares against original images to check if issue is being fixed.
+    For citizen: checks if the image is relevant to the complaint category.
+    """
+    try:
+        # ---- Validate evidence image ----
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+        image_bytes = await image.read()
+        if len(image_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+
+        evidence_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Parse original images (base64 strings)
+        original_images_list = json.loads(original_images)
+        has_original_images = len(original_images_list) > 0
+
+        # Build the image content array for the LLM
+        image_content = []
+
+        # Add original complaint images first (if available)
+        if has_original_images:
+            for idx, orig_b64 in enumerate(original_images_list):
+                image_content.append({
+                    "type": "text",
+                    "text": f"--- ORIGINAL COMPLAINT IMAGE {idx + 1} ---"
+                })
+                image_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{orig_b64}"
+                    }
+                })
+
+        # Add the evidence image
+        evidence_label = "NEW EVIDENCE IMAGE"
+        if "authority" in evidence_type:
+            evidence_label = "AUTHORITY PROOF IMAGE (submitted as proof of fix)"
+        else:
+            evidence_label = "CITIZEN EVIDENCE IMAGE (submitted as additional evidence)"
+
+        image_content.append({
+            "type": "text",
+            "text": f"--- {evidence_label} ---"
+        })
+        image_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{evidence_base64}"
+            }
+        })
+
+        # Build prompt based on evidence type
+        description_context = f'\nComplaint description: "{complaint_description}"' if complaint_description else ""
+
+        if "authority" in evidence_type:
+            action_word = "being actively worked on" if "progress" in evidence_type else "fixed, repaired, or resolved"
+            
+            if has_original_images:
+                prompt = f"""
+You are an AI evidence verification system for a civic complaint platform in Dhaka city.
+
+A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
+
+You are given the ORIGINAL complaint images (showing the reported issue) and a NEW EVIDENCE image submitted by the assigned authority as proof.
+
+Your job is to analyze whether the evidence image genuinely shows:
+1. The SAME location or area as the original complaint images
+2. The reported issue ({complaint_category}) being {action_word}
+
+Verdict options:
+- "genuine": The evidence clearly shows the same location AND the issue being {action_word}. The before-and-after is convincing.
+- "inconclusive": The evidence might be related but it's unclear if it's the same location or if work is actually being done. Maybe the angle is different, or the evidence is ambiguous.
+- "suspicious": The evidence appears unrelated to the original complaint (different location, different issue), or the image doesn't show any repair/fix work, or it looks like a stock/random photo.
+
+Rules:
+- Return ONLY valid JSON
+- Confidence must be a number between 0 and 100 (how confident you are in your verdict)
+- Reasoning should be a brief 1-2 sentence explanation that will be shown to the user
+- Be fair but vigilant — false evidence undermines the system
+
+Output JSON schema:
+{{
+  "verdict": "genuine" | "inconclusive" | "suspicious",
+  "confidence": number,
+  "reasoning": "string"
+}}
+"""
+            else:
+                prompt = f"""
+You are an AI evidence verification system for a civic complaint platform in Dhaka city.
+
+A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
+
+An authority has submitted this image as proof that the issue is being {action_word}.
+
+Analyze whether this image plausibly shows:
+1. A civic issue of type "{complaint_category}" being {action_word}
+2. Genuine repair/construction/fix work (not a random or unrelated photo)
+
+Verdict options:
+- "genuine": The image clearly shows relevant work related to {complaint_category} being {action_word}.
+- "inconclusive": The image might show some work but it's unclear if it relates to {complaint_category}.
+- "suspicious": The image appears completely unrelated to {complaint_category}, or doesn't show any work being done, or looks like a stock/random photo.
+
+Rules:
+- Return ONLY valid JSON
+- Confidence must be a number between 0 and 100
+- Reasoning should be a brief 1-2 sentence explanation shown to the user
+- Be fair but vigilant
+
+Output JSON schema:
+{{
+  "verdict": "genuine" | "inconclusive" | "suspicious",
+  "confidence": number,
+  "reasoning": "string"
+}}
+"""
+        else:
+            # Citizen evidence
+            if has_original_images:
+                prompt = f"""
+You are an AI evidence verification system for a civic complaint platform in Dhaka city.
+
+A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
+
+A citizen is submitting additional evidence for this complaint. You have the ORIGINAL complaint images and the NEW EVIDENCE image.
+
+Analyze whether the new evidence image:
+1. Shows a civic issue related to "{complaint_category}"
+2. Appears to be from the same area or shows the same type of issue
+
+Verdict options:
+- "genuine": The evidence clearly shows a relevant civic issue related to {complaint_category}.
+- "inconclusive": The image might be related but it's unclear if it pertains to this complaint category.
+- "suspicious": The image appears completely unrelated to {complaint_category}, or is a random/stock photo with no civic issue visible.
+
+Rules:
+- Return ONLY valid JSON
+- Confidence must be a number between 0 and 100
+- Reasoning should be a brief 1-2 sentence explanation shown to the user
+- Be fair — citizens may photograph the issue from different angles
+
+Output JSON schema:
+{{
+  "verdict": "genuine" | "inconclusive" | "suspicious",
+  "confidence": number,
+  "reasoning": "string"
+}}
+"""
+            else:
+                prompt = f"""
+You are an AI evidence verification system for a civic complaint platform in Dhaka city.
+
+A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
+
+A citizen is submitting this image as additional evidence. Analyze whether it shows a relevant civic issue related to "{complaint_category}".
+
+Verdict options:
+- "genuine": The image clearly shows a civic issue related to {complaint_category}.
+- "inconclusive": The image might be related but it's unclear.
+- "suspicious": The image appears completely unrelated to {complaint_category} or is a random photo.
+
+Rules:
+- Return ONLY valid JSON
+- Confidence must be a number between 0 and 100
+- Reasoning should be a brief 1-2 sentence explanation shown to the user
+
+Output JSON schema:
+{{
+  "verdict": "genuine" | "inconclusive" | "suspicious",
+  "confidence": number,
+  "reasoning": "string"
+}}
+"""
+
+        # Build messages with prompt + all images
+        messages_content = [{"type": "text", "text": prompt}] + image_content
+
+        response = client.chat.completions.create(
+            model="openai/gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": messages_content
+                }
+            ]
+        )
+
+        content = response.choices[0].message.content
+        parsed = extract_json_from_response(content)
+
+        if not parsed or "verdict" not in parsed:
+            raise ValueError("Invalid JSON from evidence verification model")
+
+        # Normalize verdict
+        verdict = parsed.get("verdict", "inconclusive").lower()
+        if verdict not in ("genuine", "inconclusive", "suspicious"):
+            verdict = "inconclusive"
+
+        # Normalize confidence
+        confidence = parsed.get("confidence", 0)
+        try:
+            confidence = int(float(confidence))
+        except Exception:
+            confidence = 0
+        confidence = max(0, min(100, confidence))
+
+        reasoning = parsed.get("reasoning", "No reasoning provided.")
+
+        return {
+            "verdict": verdict,
+            "confidence": confidence,
+            "reasoning": reasoning
         }
 
     except Exception as e:

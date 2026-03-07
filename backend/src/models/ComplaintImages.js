@@ -28,6 +28,21 @@ const ComplaintImages = sequelize.define('ComplaintImages', {
   imageHash: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  aiVerdict: {
+    type: DataTypes.ENUM('genuine', 'inconclusive', 'suspicious'),
+    allowNull: true,
+    defaultValue: null
+  },
+  aiConfidence: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null
+  },
+  aiReasoning: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    defaultValue: null
   }
 });
 

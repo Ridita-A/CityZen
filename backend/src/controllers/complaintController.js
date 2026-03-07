@@ -622,7 +622,7 @@ exports.updateDepartment = async (req, res) => {
 
     // Handle areas - delete removed ones and upsert provided ones
     const existingAreaIds = areas.filter(a => a.id).map(a => a.id);
-    
+
     // Delete areas not in the new list
     await sequelize.models.AuthorityCompanyAreas.destroy({
       where: {
@@ -722,7 +722,7 @@ exports.getAllComplaints = async (req, res) => {
       {
         model: ComplaintImages,
         as: 'images',
-        attributes: ['id', 'imageURL', 'type'],
+        attributes: ['id', 'imageURL', 'type', 'aiVerdict', 'aiConfidence', 'aiReasoning'],
       }
     ];
 
@@ -827,7 +827,7 @@ exports.getComplaintsByCitizen = async (req, res) => {
         {
           model: ComplaintImages,
           as: 'images',
-          attributes: ['id', 'imageURL', 'type'],
+          attributes: ['id', 'imageURL', 'type', 'aiVerdict', 'aiConfidence', 'aiReasoning'],
         },
       ],
       order: [['createdAt', 'DESC']],
@@ -904,7 +904,7 @@ exports.getComplaintsByAuthority = async (req, res) => {
         {
           model: ComplaintImages,
           as: 'images',
-          attributes: ['id', 'imageURL', 'type'],
+          attributes: ['id', 'imageURL', 'type', 'aiVerdict', 'aiConfidence', 'aiReasoning'],
         },
       ],
       order: [
@@ -942,7 +942,7 @@ exports.getComplaintById = async (req, res) => {
       {
         model: ComplaintImages,
         as: 'images',
-        attributes: ['id', 'imageURL', 'type'],
+        attributes: ['id', 'imageURL', 'type', 'aiVerdict', 'aiConfidence', 'aiReasoning'],
       }
     ];
 
@@ -1771,6 +1771,16 @@ exports.addEvidenceToComplaint = async (req, res) => {
     const { id: complaintId } = req.params;
     const imageFiles = req.files;
 
+    // Parse AI verdicts if provided (JSON string from FormData)
+    let aiVerdicts = [];
+    try {
+      if (req.body.aiVerdicts) {
+        aiVerdicts = JSON.parse(req.body.aiVerdicts);
+      }
+    } catch (parseErr) {
+      console.warn('Failed to parse aiVerdicts:', parseErr.message);
+    }
+
     if (!complaintId) {
       await t.rollback();
       return res.status(400).json({ message: 'Complaint ID is required.' });
@@ -1789,7 +1799,8 @@ exports.addEvidenceToComplaint = async (req, res) => {
     const bucketName = 'cityzen-media';
     const uploadedImages = [];
 
-    for (const imageFile of imageFiles) {
+    for (let i = 0; i < imageFiles.length; i++) {
+      const imageFile = imageFiles[i];
       const filePath = `complaint_evidence/${complaintId}_${Date.now()}_${imageFile.originalname}`;
 
       const { error: uploadError } = await supabase.storage
@@ -1811,11 +1822,17 @@ exports.addEvidenceToComplaint = async (req, res) => {
         throw new Error('Failed to retrieve public URL.');
       }
 
+      // Get AI verdict for this image (if available)
+      const verdict = aiVerdicts[i] || {};
+
       const newImage = await ComplaintImages.create(
         {
           complaintId: complaintId,
           imageURL: publicUrlData.publicUrl,
-          type: 'evidence', // Mark as evidence
+          type: 'evidence',
+          aiVerdict: verdict.verdict || null,
+          aiConfidence: verdict.confidence || null,
+          aiReasoning: verdict.reasoning || null,
         },
         { transaction: t }
       );

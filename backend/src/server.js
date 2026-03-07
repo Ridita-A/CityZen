@@ -28,7 +28,7 @@ async function startServer() {
         logger.info("Database connection successful");
 
         // Sync models
-        await sequelize.sync({ force: false });
+        await sequelize.sync({ alter: true }); // TEMP: alter to add new AI verdict columns, revert to { force: false } after first run
         logger.info("Models synced");
 
         // Run the seeding logic

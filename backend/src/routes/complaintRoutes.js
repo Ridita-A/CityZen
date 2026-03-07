@@ -12,6 +12,8 @@ router.post('/complaints/check-duplicate', complaintController.checkDuplicateCom
 // Get all categories
 router.get('/complaints/categories', complaintController.getCategories);
 router.post('/complaints/categories', complaintController.createCategory);
+// Update departments for a category
+router.put('/complaints/categories/:id/departments', complaintController.updateCategoryDepartments);
 router.delete('/complaints/categories/:id', complaintController.deleteCategory);
 router.get('/complaints/recommend-authorities', complaintController.getRecommendedAuthorities);
 
@@ -25,6 +27,9 @@ router.delete('/departments/:id', complaintController.deleteDepartment);
 router.get('/admin/kpis', complaintController.getAdminKpis);
 router.get('/admin/kpis/details', complaintController.getAdminKpiDetails);
 router.get('/admin/moderation', complaintController.getModerationOverview);
+
+// Department performance stats (Admin)
+router.get('/admin/departments/stats', complaintController.getDepartmentPerformanceStats);
 
 // Get all complaints (with filtering and pagination)
 router.get('/complaints', complaintController.getAllComplaints);

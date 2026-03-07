@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, Modal, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { Download, TrendingUp, CheckCircle, BarChart3, Map as MapIcon, X, Calendar, Filter, Clock, AlertCircle } from 'lucide-react-native';
 import { BarChart } from 'react-native-chart-kit';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Heatmap, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import api from '../services/api';
@@ -26,6 +26,14 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 	const [showChart, setShowChart] = useState(true);
 	const [showMap, setShowMap] = useState(true);
 	const [showExportModal, setShowExportModal] = useState(false);
+	const mapRef = useRef(null);
+
+	const DEFAULT_REGION = {
+		latitude: 23.8103,
+		longitude: 90.4125,
+		latitudeDelta: 0.1,
+		longitudeDelta: 0.1,
+	};
 
 	const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 	const currentYearNum = new Date().getFullYear();
@@ -274,13 +282,51 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 		datasets: [{ data: [metrics.pending, metrics.accepted, metrics.inProgress, metrics.resolved, metrics.appealed] }]
 	};
 
-	const heatmapPoints = filteredComplaints
-		.filter(c => c.latitude && c.longitude)
-		.map(c => ({
-			latitude: parseFloat(c.latitude),
-			longitude: parseFloat(c.longitude),
-			weight: 1
-		}));
+	const markerPoints = useMemo(() => {
+		return filteredComplaints
+			.map((c) => {
+				const latitude = Number(c.latitude);
+				const longitude = Number(c.longitude);
+				if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+				return {
+					id: c.id,
+					latitude,
+					longitude,
+				};
+			})
+			.filter(Boolean);
+	}, [filteredComplaints]);
+
+	const heatmapPoints = useMemo(() => {
+		const buckets = new Map();
+		for (const point of markerPoints) {
+			const key = `${point.latitude.toFixed(4)}:${point.longitude.toFixed(4)}`;
+			const existing = buckets.get(key);
+			if (existing) {
+				existing.weight += 1;
+			} else {
+				buckets.set(key, {
+					latitude: point.latitude,
+					longitude: point.longitude,
+					weight: 1,
+				});
+			}
+		}
+		return Array.from(buckets.values());
+	}, [markerPoints]);
+
+	useEffect(() => {
+		if (!showMap || markerPoints.length === 0 || !mapRef.current?.fitToCoordinates) return;
+
+		const timer = setTimeout(() => {
+			mapRef.current.fitToCoordinates(markerPoints, {
+				edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+				animated: true,
+			});
+		}, 150);
+
+		return () => clearTimeout(timer);
+	}, [showMap, markerPoints]);
 
 	return (
 		<ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -433,14 +479,31 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				{showMap && (
 					<View style={styles.mapWrapper}>
 						<MapView
+							ref={mapRef}
 							provider={PROVIDER_GOOGLE}
 							style={styles.map}
-							initialRegion={{ latitude: 23.8103, longitude: 90.4125, latitudeDelta: 0.1, longitudeDelta: 0.1 }}
+							initialRegion={DEFAULT_REGION}
 						>
-							{filteredComplaints.filter(c => c.latitude).map((c, i) => (
-								<Marker key={i} coordinate={{ latitude: parseFloat(c.latitude), longitude: parseFloat(c.longitude) }} pinColor="#1E88E5" />
+							{heatmapPoints.length > 0 && (
+								<Heatmap
+									points={heatmapPoints}
+									radius={42}
+									opacity={0.75}
+								/>
+							)}
+							{markerPoints.map((point, index) => (
+								<Marker
+									key={`${point.id || 'point'}-${index}`}
+									coordinate={{ latitude: point.latitude, longitude: point.longitude }}
+									pinColor="#1E88E5"
+								/>
 							))}
 						</MapView>
+						{markerPoints.length === 0 && (
+							<View style={styles.mapEmptyState}>
+								<Text style={styles.mapEmptyText}>No valid complaint coordinates found for this filter.</Text>
+							</View>
+						)}
 					</View>
 				)}
 			</View>
@@ -653,6 +716,17 @@ const styles = StyleSheet.create({
 	chartStyle: { marginLeft: -16, borderRadius: 16 },
 	mapWrapper: { height: 220, borderRadius: 12, overflow: 'hidden' },
 	map: { width: '100%', height: '100%' },
+	mapEmptyState: {
+		position: 'absolute',
+		left: 12,
+		right: 12,
+		bottom: 12,
+		backgroundColor: 'rgba(255,255,255,0.92)',
+		paddingHorizontal: 12,
+		paddingVertical: 8,
+		borderRadius: 10,
+	},
+	mapEmptyText: { color: '#6B7280', fontSize: 12, textAlign: 'center', fontWeight: '600' },
 	modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
 	modalContent: { backgroundColor: 'white', borderRadius: 20, padding: 24, width: '90%', maxWidth: 400 },
 	modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

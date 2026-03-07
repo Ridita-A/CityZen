@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { Camera, Image as GalleryIcon, Library, RefreshCcw, ArrowRight } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Camera, Image as GalleryIcon, RefreshCcw, ArrowRight } from 'lucide-react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { useComplaint } from '../context/ComplaintContext';
 import { saveOfflineReport, deleteReport, initStorage } from '../utils/offlineStorage';
@@ -204,28 +203,6 @@ export default function CameraScreen({ navigation }) {
         }
     };
 
-    const handleLibraryPick = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access media library is required!');
-            return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-            exif: true,
-        });
-
-        if (result.assets?.length > 0) {
-            const asset = result.assets[0];
-            setImages([asset.uri]);
-            setPreviewUri(asset.uri);
-            navigation.navigate('SubmitComplaintDetails');
-        }
-    };
-
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -261,12 +238,7 @@ export default function CameraScreen({ navigation }) {
             <View style={styles.footer}>
                 {!previewUri ? (
                     <>
-                        <View style={styles.sideButtonContainer}>
-                            <TouchableOpacity onPress={handleLibraryPick} style={styles.sideButton}>
-                                <Library size={30} color="white" />
-                                <Text style={styles.sideButtonText}>Library</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <View style={styles.sideButtonContainer} />
                         
                         <View style={styles.cameraButtonContainer}>
                             <TouchableOpacity 

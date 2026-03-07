@@ -7,13 +7,29 @@ import {
 import Navigation from '../components/Navigation';
 import {
     MapPin, Calendar, ArrowLeft, CheckCircle, Circle, HardHat,
-    MessageSquare, AlertTriangle, Map, Camera, X, Clock
+    MessageSquare, AlertTriangle, Map, Camera, X, Clock, Sparkles
 } from 'lucide-react-native';
 import api from '../services/api';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const GPS_DISTANCE_THRESHOLD_METERS = 50; // Max allowed distance from complaint location
+
+// Haversine distance formula (meters)
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000; // Earth radius in meters
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 export default function AuthorityComplaintDetailScreen({ route, navigation, onLogout, darkMode, toggleDarkMode }) {
     const { id, complaintId, initialData } = route.params || {};
@@ -27,6 +43,7 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
     const [actionType, setActionType] = useState('');
     const [note, setNote] = useState('');
     const [images, setImages] = useState([]);
+    const [isVerifying, setIsVerifying] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
 
     const rejectionShortcuts = ["Inaccurate Location", "Duplicate Report", "Private Property", "Outside Jurisdiction"];
@@ -67,20 +84,113 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
     };
 
     const handlePickImage = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
+        const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+        if (cameraStatus !== 'granted') {
             Alert.alert('Permission Needed', 'Camera permission is required to take proof photos.');
+            return;
+        }
+
+        // Request location permission for GPS verification
+        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+        if (locStatus !== 'granted') {
+            Alert.alert('Location Required', 'Location permission is needed to verify you are at the complaint site.');
             return;
         }
 
         const result = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
             quality: 0.7,
+            exif: true,
         });
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
+            // Get authority's current GPS location
+            try {
+                const gps = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                const authLat = gps.coords.latitude;
+                const authLon = gps.coords.longitude;
+
+                // Compare with complaint location
+                if (complaint?.latitude && complaint?.longitude) {
+                    const distance = getDistanceInMeters(
+                        authLat, authLon,
+                        parseFloat(complaint.latitude), parseFloat(complaint.longitude)
+                    );
+
+                    if (distance > GPS_DISTANCE_THRESHOLD_METERS) {
+                        Alert.alert(
+                            '📍 Location Mismatch',
+                            `You appear to be ${Math.round(distance)}m away from the complaint location (max ${GPS_DISTANCE_THRESHOLD_METERS}m allowed).\n\nPlease go to the complaint site before capturing evidence.`,
+                            [{ text: 'OK' }]
+                        );
+                        return; // Block the photo
+                    }
+                }
+            } catch (gpsErr) {
+                console.warn('GPS check failed:', gpsErr.message);
+                // If GPS fails, allow the photo but warn
+                Alert.alert(
+                    'GPS Unavailable',
+                    'Could not verify your location. The photo will still be submitted but may be flagged during AI review.',
+                    [{ text: 'Continue' }]
+                );
+            }
+
             setImages(prev => [...prev, result.assets[0].uri]);
         }
+    };
+
+    // AI Evidence Verification
+    const verifyEvidenceImages = async (imagesToVerify, type) => {
+        setIsVerifying(true);
+        const evidenceType = type === 'Resolve' ? 'authority_resolution' : 'authority_progress';
+        let hasRejection = false;
+        let rejectionReasons = [];
+
+        for (const uri of imagesToVerify) {
+            try {
+                const formData = new FormData();
+                const filename = uri.split('/').pop();
+                const match = /\.(\w+)$/.exec(filename);
+                const fileType = match ? `image/${match[1]}` : 'image/jpeg';
+
+                formData.append('image', { uri, name: filename, type: fileType });
+                formData.append('complaintId', String(complaint.id));
+                formData.append('evidenceType', evidenceType);
+
+                const res = await fetch(`${API_URL}/api/ai/verify-evidence`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!res.ok) {
+                    console.error('AI verification request failed');
+                    continue; // Don't block on AI errors
+                }
+
+                const result = await res.json();
+                if (result.verdict === 'suspicious') {
+                    hasRejection = true;
+                    rejectionReasons.push(result.reasoning);
+                }
+            } catch (err) {
+                console.error('Evidence verification error:', err);
+                // Don't block on network errors
+            }
+        }
+
+        setIsVerifying(false);
+
+        if (hasRejection) {
+            Alert.alert(
+                '⚠️ Evidence Rejected by AI',
+                `Your evidence was flagged as not relevant to this complaint:\n\n${rejectionReasons.join('\n\n')}\n\nPlease capture relevant work-site photos that show the issue being addressed.`,
+                [{ text: 'OK' }]
+            );
+            return false;
+        }
+
+        return true;
     };
 
     const handleFinalSubmit = async (statusOverride) => {
@@ -90,6 +200,12 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
         if (type === 'Reject' && !note) return Alert.alert("Required", "Please provide a rejection reason.");
         if ((type === 'Resolve' || type === 'Progress') && (!images || images.length === 0)) {
             return Alert.alert("Evidence Required", "Please capture a work-site photo.");
+        }
+
+        // AI verification for Progress/Resolve (not Reject or Accept)
+        if ((type === 'Resolve' || type === 'Progress') && images.length > 0) {
+            const verified = await verifyEvidenceImages(images, type);
+            if (!verified) return; // Blocked by AI
         }
 
         const statusMapBackend = { 'Reject': 'rejected', 'Progress': 'in_progress', 'Resolve': 'resolved', 'Accept': 'accepted' };
@@ -330,14 +446,54 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                             <View style={[styles.evidenceSection, { marginTop: 20, borderTopWidth: 1, borderTopColor: darkMode ? '#374151' : '#E5E7EB', paddingTop: 15 }]}>
                                 <Text style={styles.label}>CITIZEN PROVIDED EVIDENCE</Text>
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.evidenceScroll}>
-                                    {complaint.images.filter((img, idx) => (img.type === 'initial' && idx > 0) || img.type === 'evidence').map((img, idx) => (
-                                        <View key={idx} style={styles.evidenceImageWrapper}>
-                                            <Image source={{ uri: img.imageURL }} style={styles.evidenceImage} />
-                                            <View style={[styles.evidenceBadge, { backgroundColor: img.type === 'initial' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(75, 85, 99, 0.8)' }]}>
-                                                <Text style={styles.evidenceBadgeText}>{img.type === 'initial' ? 'ORIGINAL' : 'SUPPLEMENTARY'}</Text>
-                                            </View>
-                                        </View>
-                                    ))}
+                                    {complaint.images.filter((img, idx) => (img.type === 'initial' && idx > 0) || img.type === 'evidence').map((img, idx) => {
+                                        const verdictConfig = img.aiVerdict === 'genuine'
+                                            ? { color: '#059669', bg: 'rgba(5, 150, 105, 0.85)', icon: <ShieldCheck size={8} color="white" />, label: 'GENUINE' }
+                                            : img.aiVerdict === 'inconclusive'
+                                                ? { color: '#D97706', bg: 'rgba(217, 119, 6, 0.85)', icon: <AlertTriangle size={8} color="white" />, label: 'INCONCLUSIVE' }
+                                                : img.aiVerdict === 'suspicious'
+                                                    ? { color: '#DC2626', bg: 'rgba(220, 38, 38, 0.85)', icon: <ShieldAlert size={8} color="white" />, label: 'SUSPICIOUS' }
+                                                    : null;
+                                        return (
+                                            <TouchableOpacity
+                                                key={idx}
+                                                style={styles.evidenceImageWrapper}
+                                                onPress={() => img.aiReasoning && Alert.alert(
+                                                    `AI Verdict: ${img.aiVerdict?.toUpperCase() || 'N/A'}`,
+                                                    `Confidence: ${img.aiConfidence || 0}%\n\n${img.aiReasoning}`
+                                                )}
+                                                activeOpacity={img.aiReasoning ? 0.7 : 1}
+                                            >
+                                                <Image source={{ uri: img.imageURL }} style={styles.evidenceImage} />
+                                                <View style={[styles.evidenceBadge, {
+                                                    backgroundColor: img.type === 'initial' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(75, 85, 99, 0.8)'
+                                                }]}>
+                                                    <Text style={styles.evidenceBadgeText}>{img.type === 'initial' ? 'ORIGINAL' : 'SUPPLEMENTARY'}</Text>
+                                                </View>
+                                                {verdictConfig && (
+                                                    <View style={[styles.evidenceBadge, {
+                                                        backgroundColor: verdictConfig.bg,
+                                                        bottom: undefined,
+                                                        top: 0,
+                                                        borderBottomLeftRadius: 0,
+                                                        borderBottomRightRadius: 0,
+                                                        borderTopLeftRadius: 8,
+                                                        borderTopRightRadius: 8,
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: 3,
+                                                        paddingVertical: 3,
+                                                    }]}>
+                                                        {verdictConfig.icon}
+                                                        <Text style={[styles.evidenceBadgeText, { fontSize: 7 }]}>
+                                                            AI: {verdictConfig.label} ({img.aiConfidence}%)
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </TouchableOpacity>
+                                        );
+                                    })}
                                 </ScrollView>
                             </View>
                         )}
@@ -392,12 +548,21 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                                 <TouchableOpacity
                                     style={[styles.uploadBox, images.length > 0 && { borderColor: '#10B981', backgroundColor: '#F0FDF4' }]}
                                     onPress={handlePickImage}
+                                    disabled={isVerifying}
                                 >
                                     <Camera size={32} color={images.length > 0 ? "#10B981" : "#1E88E5"} />
                                     <Text style={[styles.uploadText, { color: images.length > 0 ? '#10B981' : '#1E88E5' }]}>
                                         {images.length > 0 ? `${images.length} Photo(s) Captured` : 'Capture Site Photo'}
                                     </Text>
                                 </TouchableOpacity>
+
+                                {/* AI Verification Notice */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, paddingHorizontal: 4 }}>
+                                    <Sparkles size={12} color="#6B7280" />
+                                    <Text style={{ color: '#6B7280', fontSize: 11, marginLeft: 4 }}>
+                                        AI will verify your evidence before submission
+                                    </Text>
+                                </View>
 
                                 {images.length > 0 && (
                                     <ScrollView horizontal style={styles.modalImageScroll} showsHorizontalScrollIndicator={false}>
@@ -434,9 +599,14 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                             <TouchableOpacity
                                 style={[styles.confirmBtn, { backgroundColor: actionType === 'Reject' ? '#EF4444' : '#10B981' }]}
                                 onPress={() => handleFinalSubmit()}
-                                disabled={isUpdating}
+                                disabled={isUpdating || isVerifying}
                             >
-                                {isUpdating ? <ActivityIndicator size="small" color="white" /> : (
+                                {isVerifying ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <ActivityIndicator size="small" color="white" />
+                                        <Text style={[styles.confirmBtnText, { marginLeft: 8 }]}>Verifying...</Text>
+                                    </View>
+                                ) : isUpdating ? <ActivityIndicator size="small" color="white" /> : (
                                     <Text style={styles.confirmBtnText}>Submit {actionType}</Text>
                                 )}
                             </TouchableOpacity>

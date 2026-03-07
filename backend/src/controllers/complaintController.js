@@ -86,34 +86,47 @@ const generateMisconductReportPdf = async (complaint, authorityName) => {
 
     doc.fontSize(20).text('CITYZEN MUNICIPAL OVERSIGHT', { align: 'center' });
     doc.moveDown(0.2);
-    doc.fontSize(18).fillColor('#B91C1C').text('MISCONDUCT REPORT', { align: 'center' });
+    doc.fontSize(18).fillColor('#B91C1C').text('OFFICIAL APOLOGY & MISCONDUCT REPORT', { align: 'center' });
     doc.fillColor('black').moveDown();
+    
+    doc.fontSize(14).fillColor('#B91C1C').text('We Sincerely Apologize', { align: 'center' });
+    doc.fillColor('black').fontSize(10).text(
+      'We deeply regret that this complaint was not addressed in a timely manner. Our citizens deserve better, and we take full responsibility for this service failure.',
+      { align: 'center' }
+    );
+    doc.moveDown();
 
     doc.fontSize(12).text(`Complaint ID: #${complaint.id}`);
-    doc.text(`Department: ${authorityName}`);
-    doc.text(`Generated At: ${new Date().toISOString()}`);
-    doc.text(`Original Submission: ${new Date(complaint.createdAt).toISOString()}`);
-    doc.text(`Admin Escalated At: ${complaint.escalatedAt ? new Date(complaint.escalatedAt).toISOString() : 'N/A'}`);
-    doc.text(`48-hour Deadline: ${complaint.adminDeadlineAt ? new Date(complaint.adminDeadlineAt).toISOString() : 'N/A'}`);
-    doc.text(`Critical Failure At: ${complaint.criticalFailureAt ? new Date(complaint.criticalFailureAt).toISOString() : 'N/A'}`);
+    doc.text(`Department Responsible: ${authorityName}`);
+    doc.text(`Report Generated: ${new Date().toISOString()}`);
+    doc.text(`Citizen Submitted: ${new Date(complaint.createdAt).toISOString()}`);
+    doc.text(`Escalated to Admin: ${complaint.escalatedAt ? new Date(complaint.escalatedAt).toISOString() : 'N/A'}`);
+    doc.text(`48-Hour Deadline: ${complaint.adminDeadlineAt ? new Date(complaint.adminDeadlineAt).toISOString() : 'N/A'}`);
+    doc.text(`Deadline Missed At: ${complaint.criticalFailureAt ? new Date(complaint.criticalFailureAt).toISOString() : 'N/A'}`);
     doc.moveDown();
 
     doc.fontSize(13).text('Case Summary', { underline: true });
     doc.fontSize(11).text(`Title: ${complaint.title || 'Untitled Complaint'}`);
     doc.text(`Description: ${complaint.description || 'N/A'}`);
     doc.text(`Location: ${complaint.latitude}, ${complaint.longitude}`);
-    doc.text(`Current Status: ${complaint.currentStatus}`);
+    doc.text(`Status at Failure: ${complaint.currentStatus}`);
     doc.moveDown();
 
-    doc.fontSize(13).text('Citizen Pressure Metrics', { underline: true });
-    doc.fontSize(11).text(`Bumps: ${complaint.bumpCount || 0}`);
-    doc.text(`Upvotes: ${complaint.upvotes || 0}`);
+    doc.fontSize(13).text('Citizen Engagement Metrics', { underline: true });
+    doc.fontSize(11).text(`Community Bumps: ${complaint.bumpCount || 0}`);
+    doc.text(`Public Upvotes: ${complaint.upvotes || 0}`);
     doc.text(`Priority Score: ${complaint.priorityScore || 0}`);
     doc.moveDown();
 
-    doc.fontSize(13).text('Administrative Finding', { underline: true });
+    doc.fontSize(13).text('Official Finding', { underline: true });
     doc.fontSize(11).text(
-      'Department failed to provide a substantive update (status change or authority proof upload) within the 48-hour admin escalation window.'
+      `The department "${authorityName}" failed to provide any substantive update (status change or photographic evidence) within the mandated 48-hour escalation window. This represents a critical service delivery failure and will be recorded in the department's performance audit.`
+    );
+    doc.moveDown();
+    
+    doc.fontSize(13).text('Citizen Assurance', { underline: true });
+    doc.fontSize(11).text(
+      'We are truly sorry for this delay. Your complaint has been flagged for immediate intervention by city administration. This report will be used to improve departmental accountability and prevent future delays.'
     );
 
     doc.end();
@@ -165,7 +178,7 @@ const finalizeCriticalFailureIfNeeded = async (complaint, options = {}) => {
     escalationLevel: complaint.escalationLevel === 'none' ? 'track_b' : complaint.escalationLevel,
     adminRemarks: appendAdminRemark(
       complaint.adminRemarks,
-      `Critical failure recorded. Department '${authorityName}' missed the 48-hour admin deadline without substantive update.`
+      `🚨 CRITICAL FAILURE: Department '${authorityName}' missed the 48-hour deadline without substantive update. Performance audit triggered. Apology report generated for citizen.`
     ),
   };
 
@@ -1251,9 +1264,10 @@ exports.getComplaintById = async (req, res) => {
 
     const plainComplaint = complaint.get({ plain: true });
     plainComplaint.misconductReportDownloadUrl = getMisconductReportDownloadUrl(complaint, req);
-    plainComplaint.authorityEscalationWarning = `Attention: Complaint #${complaint.id} has high community interest. Immediate action required.`;
-    plainComplaint.userEscalationMessage = 'We hear you. This issue has been escalated to the City Admin for manual intervention and department review.';
-    plainComplaint.userCriticalFailureMessage = 'We apologize for the delay. Despite escalation, the department has failed to provide a substantive update within the 48-hour deadline. A formal Misconduct Report has been generated for disciplinary review.';
+    plainComplaint.authorityEscalationWarning = `⚠️ URGENT: Complaint #${complaint.id} has escalated due to high community engagement. You must provide a substantive update (status change or photo evidence) within 48 hours to avoid critical failure.`;
+    plainComplaint.authorityCriticalFailureWarning = `🚨 CRITICAL FAILURE: The 48-hour deadline for Complaint #${complaint.id} has been missed. This failure has been logged in your department's performance record and a misconduct report has been generated for administrative review.`;
+    plainComplaint.userEscalationMessage = 'We hear you. Your complaint has been escalated to City Admin for immediate attention. The department has 48 hours to respond or face formal review.';
+    plainComplaint.userCriticalFailureMessage = 'We are deeply sorry for this unacceptable delay. Despite our escalation, the department failed to respond within 48 hours. We take full responsibility for this service failure. An official apology report has been generated, and this incident will be used to improve departmental accountability.';
 
     // Add hasUpvoted flag
     if (citizenUid) {

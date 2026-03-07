@@ -399,7 +399,23 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                         <Text style={[styles.description, darkMode && styles.textGray]}>{complaint?.description || 'No description provided.'}</Text>
                     </View>
 
-                    {(isEscalated || deadlineInfo.showActive || deadlineInfo.showMissed) && (
+                    {/* Critical Failure Warning Banner */}
+                    {complaint?.currentStatus === 'critical_failure' && (
+                        <View style={[styles.card, styles.criticalFailureCard, darkMode && styles.cardDark]}>
+                            <View style={styles.sectionHeaderRow}>
+                                <AlertTriangle size={20} color="#7F1D1D" />
+                                <Text style={[styles.sectionTitle, { color: '#7F1D1D', fontWeight: 'bold' }]}>🚨 CRITICAL FAILURE - PERFORMANCE AUDIT</Text>
+                            </View>
+                            <Text style={[styles.criticalFailureText, darkMode && styles.textWhite]}>
+                                {complaint?.authorityCriticalFailureWarning || `The 48-hour deadline for this complaint has been missed. This failure has been logged in your department's performance record and a misconduct report has been generated for administrative review.`}
+                            </Text>
+                            <Text style={[styles.criticalFailureSubText, darkMode && styles.textGray]}>
+                                This incident will be reviewed by city administration. Future response delays may result in additional accountability measures.
+                            </Text>
+                        </View>
+                    )}
+
+                    {(isEscalated || deadlineInfo.showActive || deadlineInfo.showMissed) && complaint?.currentStatus !== 'critical_failure' && (
                         <View style={[styles.card, styles.escalationCard, darkMode && styles.cardDark]}>
                             <View style={styles.sectionHeaderRow}>
                                 <AlertTriangle size={18} color="#B91C1C" />
@@ -791,6 +807,11 @@ const styles = StyleSheet.create({
     escalationCard: { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
     escalationText: { fontSize: 14, color: '#7F1D1D', lineHeight: 20, marginBottom: 8 },
     escalationSubText: { fontSize: 12, color: '#6B7280', lineHeight: 18 },
+    
+    criticalFailureCard: { borderColor: '#7F1D1D', backgroundColor: '#450A0A', borderWidth: 2 },
+    criticalFailureText: { fontSize: 14, color: '#FCA5A5', lineHeight: 20, marginBottom: 8, fontWeight: '600' },
+    criticalFailureSubText: { fontSize: 12, color: '#FCA5A5', lineHeight: 18, fontStyle: 'italic' },
+    
     deadlineBox: {
         marginTop: 12,
         backgroundColor: '#991B1B',

@@ -718,10 +718,10 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
           <View style={[styles.modalCard, darkMode && styles.cardDark, styles.criticalModalCard]}>
             <Text style={styles.criticalTitle}>Critical Failure Recorded</Text>
             <Text style={[styles.criticalBody, darkMode && styles.textWhite]}>
-              {complaint?.userCriticalFailureMessage || 'We apologize for the delay. Despite escalation, the department failed to provide a substantive update within the 48-hour deadline. A formal Misconduct Report has been generated for disciplinary review.'}
+              {complaint?.userCriticalFailureMessage || 'We are deeply sorry for this unacceptable delay. Despite our escalation, the department failed to respond within 48 hours. We take full responsibility for this service failure. An official apology report has been generated, and this incident will be used to improve departmental accountability.'}
             </Text>
             <Text style={[styles.criticalAuditText]}>
-              We have taken note of this failure in the department performance audit.
+              We have taken note of this failure in the department performance audit. Your voice matters, and we are committed to improving our service delivery.
             </Text>
 
             {complaint?.misconductReportDownloadUrl ? (

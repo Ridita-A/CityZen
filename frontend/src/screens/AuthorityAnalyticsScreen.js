@@ -14,7 +14,7 @@ const screenWidth = Dimensions.get('window').width;
 export default function AuthorityAnalyticsScreen({ navigation: navigationProp }) {
 	const navigation = navigationProp || useNavigation();
 	const [metrics, setMetrics] = useState({
-		total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, avgResolution: 0, avgRating: 0,
+		total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, criticalFailures: 0, deadlineMissed: 0, escalated: 0, avgResolution: 0, avgRating: 0, deadlineMissRate: 0,
 	});
 	const [deptComplaints, setDeptComplaints] = useState([]);
 	const [filteredComplaints, setFilteredComplaints] = useState([]);
@@ -61,7 +61,7 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				setDeptComplaints([]);
 				setFilteredComplaints([]);
 				setMetrics({
-					total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, avgResolution: 0, avgRating: 0,
+					total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, criticalFailures: 0, deadlineMissed: 0, escalated: 0, avgResolution: 0, avgRating: 0, deadlineMissRate: 0,
 				});
 				return;
 			}
@@ -96,7 +96,9 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 
 	const calculateMetrics = (complaints) => {
 		let total = complaints.length;
-		let resolved = 0, pending = 0, appealed = 0, accepted = 0, inProgress = 0, resolutionTimes = [];
+		let resolved = 0, pending = 0, appealed = 0, accepted = 0, inProgress = 0, criticalFailures = 0, deadlineMissed = 0, escalated = 0;
+		let resolutionTimes = [];
+		
 		for (const c of complaints) {
 			const status = c.currentStatus ? c.currentStatus.toLowerCase() : '';
 			if (['resolved', 'closed', 'completed'].includes(status)) {
@@ -111,11 +113,19 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			else if (status === 'appealed') appealed++;
 			else if (status === 'accepted') accepted++;
 			else if (status === 'in_progress' || status === 'assigned') inProgress++;
+			else if (status === 'critical_failure') criticalFailures++;
+			
+			// Track deadline performance
+			if (c.adminDeadlineStatus === 'missed' || status === 'critical_failure') deadlineMissed++;
+			if (c.forwardedByAdmin || c.escalationLevel && c.escalationLevel !== 'none') escalated++;
 		}
+		
 		const avgResolution = resolutionTimes.length > 0 ? parseFloat((resolutionTimes.reduce((sum, ms) => sum + ms, 0) / resolutionTimes.length / 1000 / 60 / 60).toFixed(1)) : 0;
 		const ratings = complaints.filter(c => c.rating != null).map(c => c.rating);
 		const avgRating = ratings.length > 0 ? parseFloat((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : 0;
-		setMetrics({ total, resolved, pending, appealed, accepted, inProgress, avgResolution, avgRating });
+		const deadlineMissRate = total > 0 ? ((deadlineMissed / total) * 100).toFixed(1) : 0;
+		
+		setMetrics({ total, resolved, pending, appealed, accepted, inProgress, criticalFailures, deadlineMissed, escalated, avgResolution, avgRating, deadlineMissRate });
 	};
 
 	const openMetricsModal = (type) => {
@@ -125,7 +135,9 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			'pending': 'Pending Cases',
 			'appealed': 'Appeals',
 			'accepted': 'Accepted Cases',
-			'inProgress': 'In Progress'
+			'inProgress': 'In Progress',
+			'escalated': 'Escalated Cases',
+			'criticalFailures': 'Critical Failures'
 		};
 		navigation.navigate('AuthorityComplaintList', {
 			statusFilter: type,
@@ -143,6 +155,8 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			if (metricType === 'appealed') return status === 'appealed';
 			if (metricType === 'accepted') return status === 'accepted';
 			if (metricType === 'inProgress') return ['in_progress', 'assigned'].includes(status);
+			if (metricType === 'criticalFailures') return status === 'critical_failure';
+			if (metricType === 'escalated') return c.forwardedByAdmin || (c.escalationLevel && c.escalationLevel !== 'none');
 			return false;
 		});
 	};
@@ -335,6 +349,14 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 					label="In Progress" value={metrics.inProgress} color="#8B5CF6" loading={loading}
 					onPress={() => openMetricsModal('inProgress')}
 				/>
+				<MetricCard
+					label="Escalated" value={metrics.escalated} color="#F97316" loading={loading}
+					onPress={() => openMetricsModal('escalated')}
+				/>
+				<MetricCard
+					label="Critical Failures" value={metrics.criticalFailures} color="#DC2626" loading={loading}
+					onPress={() => openMetricsModal('criticalFailures')}
+				/>
 
 				{/* Secondary Metrics */}
 				<View style={styles.secondaryMetricContainer}>
@@ -350,6 +372,24 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 						<View style={{ marginLeft: 10 }}>
 							<Text style={styles.secondaryLabel}>Citizen Rating</Text>
 							<Text style={styles.secondaryValue}>{metrics.avgRating}/5.0</Text>
+						</View>
+					</View>
+				</View>
+				
+				{/* Performance Warning Metrics */}
+				<View style={styles.secondaryMetricContainer}>
+					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+						<AlertCircle size={18} color="#DC2626" />
+						<View style={{ marginLeft: 10 }}>
+							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Deadlines Missed</Text>
+							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissed}</Text>
+						</View>
+					</View>
+					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+						<Clock size={18} color="#DC2626" />
+						<View style={{ marginLeft: 10 }}>
+							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Delay Rate</Text>
+							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissRate}%</Text>
 						</View>
 					</View>
 				</View>

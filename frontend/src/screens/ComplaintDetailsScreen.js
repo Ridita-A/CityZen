@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
-import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus } from 'lucide-react-native';
+import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus, ShieldCheck, ShieldAlert } from 'lucide-react-native';
 
 import api from '../services/api';
 
@@ -408,14 +408,52 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
                 <Plus size={12} color="white" />
               </TouchableOpacity>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-                {complaint.images.filter((img, idx) => (img.type === 'initial' && idx > 0) || img.type === 'evidence').map((img, idx) => (
-                  <View key={idx} style={{ position: 'relative', marginRight: 10 }}>
-                    <Image source={{ uri: img.imageURL }} style={{ width: 120, height: 120, borderRadius: 8 }} />
-                    <View style={[styles.evidenceBadge, { backgroundColor: img.type === 'initial' ? 'rgba(59, 130, 246, 0.7)' : 'rgba(107, 114, 128, 0.7)' }]}>
-                      <Text style={styles.evidenceBadgeText}>{img.type === 'initial' ? 'ORIGINAL' : 'SUPPLEMENTARY'}</Text>
-                    </View>
-                  </View>
-                ))}
+                {complaint.images.filter((img, idx) => (img.type === 'initial' && idx > 0) || img.type === 'evidence').map((img, idx) => {
+                  const verdictConfig = img.aiVerdict === 'genuine'
+                    ? { color: '#059669', bg: 'rgba(5, 150, 105, 0.85)', icon: <ShieldCheck size={8} color="white" />, label: 'GENUINE' }
+                    : img.aiVerdict === 'inconclusive'
+                      ? { color: '#D97706', bg: 'rgba(217, 119, 6, 0.85)', icon: <AlertCircle size={8} color="white" />, label: 'INCONCLUSIVE' }
+                      : img.aiVerdict === 'suspicious'
+                        ? { color: '#DC2626', bg: 'rgba(220, 38, 38, 0.85)', icon: <ShieldAlert size={8} color="white" />, label: 'SUSPICIOUS' }
+                        : null;
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={{ position: 'relative', marginRight: 10 }}
+                      onPress={() => img.aiReasoning && Alert.alert(
+                        `AI Verdict: ${img.aiVerdict?.toUpperCase() || 'N/A'}`,
+                        `Confidence: ${img.aiConfidence || 0}%\n\n${img.aiReasoning}`
+                      )}
+                      activeOpacity={img.aiReasoning ? 0.7 : 1}
+                    >
+                      <Image source={{ uri: img.imageURL }} style={{ width: 120, height: 120, borderRadius: 8 }} />
+                      <View style={[styles.evidenceBadge, { backgroundColor: img.type === 'initial' ? 'rgba(59, 130, 246, 0.7)' : 'rgba(107, 114, 128, 0.7)' }]}>
+                        <Text style={styles.evidenceBadgeText}>{img.type === 'initial' ? 'ORIGINAL' : 'SUPPLEMENTARY'}</Text>
+                      </View>
+                      {verdictConfig && (
+                        <View style={[styles.evidenceBadge, {
+                          backgroundColor: verdictConfig.bg,
+                          bottom: undefined,
+                          top: 0,
+                          borderBottomLeftRadius: 0,
+                          borderBottomRightRadius: 0,
+                          borderTopLeftRadius: 8,
+                          borderTopRightRadius: 8,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 3,
+                          paddingVertical: 3,
+                        }]}>
+                          {verdictConfig.icon}
+                          <Text style={[styles.evidenceBadgeText, { fontSize: 7 }]}>
+                            AI: {verdictConfig.label} ({img.aiConfidence}%)
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
           )}

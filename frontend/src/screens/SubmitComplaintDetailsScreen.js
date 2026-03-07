@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Image, Alert, Modal, FlatList } from 'react-native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
 import { useComplaint } from '../context/ComplaintContext';
 import { complaintAPI } from '../services/api';
+import { getOfflineReports } from '../utils/offlineStorage';
 
-import { Camera, Image as ImageIcon, Sparkles, MapPin, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Sparkles, MapPin, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield, X } from 'lucide-react-native';
 import * as ImagePicker from "expo-image-picker";
-console.log("ImagePicker object structure:", ImagePicker);
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
 import axios from 'axios';
@@ -16,10 +16,24 @@ import { auth } from '../config/firebase';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const OPENROUTER_API_URL = process.env.EXPO_PUBLIC_OPENROUTER_API_URL;
 
+const getDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000; // Radius of the Earth in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
 
 export default function SubmitComplaintDetailsScreen({ navigation, onLogout, darkMode, toggleDarkMode, route }) {
 
     const [aiLoading, setAiLoading] = useState(false);
+    const [showOfflineGallery, setShowOfflineGallery] = useState(false);
+    const [offlineReports, setOfflineReports] = useState([]);
+    const [tempSelectedReports, setTempSelectedReports] = useState([]);
 
     const {
         images,
@@ -540,6 +554,63 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         }
     };
 
+    const handleOfflineGalleryOpen = async () => {
+        const reports = await getOfflineReports();
+        setOfflineReports(reports);
+        setTempSelectedReports([]); // Reset selection when opening
+        setShowOfflineGallery(true);
+    };
+
+    const handleToggleOfflineReport = (report) => {
+        const alreadyInGallery = images.includes(report.imageUri);
+        if (alreadyInGallery) return;
+
+        // Distance check relative to first confirmed image (anchor)
+        if (images.length > 0 && location) {
+            const distance = getDistance(location.latitude, location.longitude, report.latitude, report.longitude);
+            if (distance > 50) {
+                Alert.alert("Too Far", `This image is ${distance.toFixed(1)}m from the first image (max 50m).`);
+                return;
+            }
+        } else if (tempSelectedReports.length > 0) {
+            // If no confirmed images yet, check against the first item in the current selection batch
+            const firstAnchor = tempSelectedReports[0];
+            const distance = getDistance(firstAnchor.latitude, firstAnchor.longitude, report.latitude, report.longitude);
+            if (distance > 50) {
+                Alert.alert("Too Far", "Photos in one report must be within 50m of the first selected photo.");
+                return;
+            }
+        }
+
+        setTempSelectedReports(prev => {
+            const exists = prev.find(r => r.id === report.id);
+            if (exists) {
+                return prev.filter(r => r.id !== report.id);
+            } else {
+                return [...prev, report];
+            }
+        });
+    };
+
+    const handleConfirmOfflineSelection = async () => {
+        if (tempSelectedReports.length === 0) {
+            setShowOfflineGallery(false);
+            return;
+        }
+
+        const newUris = tempSelectedReports.map(r => r.imageUri);
+        
+        // If this is the first batch, the first item sets the anchor location
+        if (images.length === 0) {
+            const firstReport = tempSelectedReports[0];
+            await updateLocationWithAddress(firstReport.latitude, firstReport.longitude);
+            setLocationTime(new Date(firstReport.createdAt).toLocaleString());
+        }
+
+        setImages(prev => [...prev, ...newUris]);
+        setShowOfflineGallery(false);
+    };
+
     const handleImagePick = async () => {
         console.log("handleImagePick called");
         const hasPermission = await requestCameraPermission();
@@ -567,60 +638,38 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
 
         if (result.assets?.length > 0) {
             const asset = result.assets[0];
-            setImages(prev => [...prev, asset.uri]); // Append new image to array
-            // await runAiDetection(asset.uri);
-
             const exifLocation = extractLocationFromExif(asset.exif);
+            
+            let currentLat, currentLon;
             if (exifLocation) {
-                await updateLocationWithAddress(exifLocation.latitude, exifLocation.longitude);
-                return;
+                currentLat = exifLocation.latitude;
+                currentLon = exifLocation.longitude;
+            } else {
+                const gps = await Location.getCurrentPositionAsync({});
+                currentLat = gps.coords.latitude;
+                currentLon = gps.coords.longitude;
             }
 
-            const gps = await Location.getCurrentPositionAsync({});
-            await updateLocationWithAddress(gps.coords.latitude, gps.coords.longitude);
+            // Always check against anchor location if images already exist
+            if (images.length > 0 && location) {
+                const distance = getDistance(location.latitude, location.longitude, currentLat, currentLon);
+                if (distance > 50) {
+                    Alert.alert("Too Far", `This image is ${distance.toFixed(1)}m from the first image (max 50m).`);
+                    return;
+                }
+            }
+
+            // If it's the first image, it sets the anchor (overriding auto-GPS)
+            if (images.length === 0) {
+                await updateLocationWithAddress(currentLat, currentLon);
+            }
+
+            setImages(prev => [...prev, asset.uri]);
         }
     };
 
     const handleLibraryPick = async () => {
-        console.log("handleLibraryPick called");
-        const hasPermission = await requestLibraryPermission();
-        const locPerm = await requestLocationPermission();
-        if (!locPerm || !hasPermission) {
-            console.log("Permissions denied for LibraryPick");
-            return;
-        }
-        console.log("Permissions granted for LibraryPick, launching image library...");
-        let result;
-        try {
-            result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.All,
-                allowsEditing: false,
-                quality: 1,
-                allowsMultipleSelection: true, // Allow multiple selections
-                exif: true,
-            });
-            console.log("ImagePicker.launchImageLibraryAsync result:", result);
-        } catch (error) {
-            console.error("Error launching image library:", error);
-            Alert.alert("Gallery Error", `Failed to launch gallery: ${error.message}`);
-            return;
-        }
-
-
-        if (result.assets?.length > 0) {
-            const asset = result.assets[0];
-            setImages(prev => [...prev, ...result.assets.map(a => a.uri)]); // Append new images to array
-            // await runAiDetection(asset.uri);
-
-            const exifLocation = extractLocationFromExif(asset.exif);
-            if (exifLocation) {
-                await updateLocationWithAddress(exifLocation.latitude, exifLocation.longitude);
-                return;
-            }
-
-            const gps = await Location.getCurrentPositionAsync({});
-            await updateLocationWithAddress(gps.coords.latitude, gps.coords.longitude);
-        }
+        handleOfflineGalleryOpen();
     };
 
     const handleGPSDetect = async () => {
@@ -630,7 +679,10 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
             if (!hasLocationPerm) throw new Error('Location permission denied');
 
             const gps = await Location.getCurrentPositionAsync({});
-            await updateLocationWithAddress(gps.coords.latitude, gps.coords.longitude);
+            // Only auto-update if no images selected yet
+            if (images.length === 0) {
+                await updateLocationWithAddress(gps.coords.latitude, gps.coords.longitude);
+            }
         } catch (err) {
             Alert.alert('Error', 'Unable to detect location.');
         } finally {
@@ -728,12 +780,10 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
                                 <View key={index} style={styles.previewContainer}>
                                     <Image source={{ uri }} style={styles.previewImage} resizeMode="cover" />
 
-                                    {index > 0 &&
-                                        <TouchableOpacity onPress={() => setImages(images.filter((_, i) => i !== index))} style={styles.removeImgBtn}>
-                                            <Trash2 size={16} color="white" />
-                                            <Text style={styles.removeImgText}>Remove</Text>
-                                        </TouchableOpacity>
-                                    }
+                                    <TouchableOpacity onPress={() => setImages(images.filter((_, i) => i !== index))} style={styles.removeImgBtn}>
+                                        <Trash2 size={16} color="white" />
+                                        <Text style={styles.removeImgText}>Remove</Text>
+                                    </TouchableOpacity>
                                 </View>
                             ))}
                         </ScrollView>
@@ -747,7 +797,7 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
 
                         <TouchableOpacity onPress={handleLibraryPick} style={[styles.uploadBtn, images.length > 0 ? styles.uploadBtnSmall : null, errors.image && styles.errorBorder]}>
                             <ImageIcon size={images.length > 0 ? 18 : 24} color="#1E88E5" />
-                            <Text style={images.length > 0 ? styles.uploadTextSmall : styles.uploadText}>Gallery</Text>
+                            <Text style={images.length > 0 ? styles.uploadTextSmall : styles.uploadText}>Offline Gallery</Text>
                         </TouchableOpacity>
                     </View>
                     {errors.image && <Text style={styles.errorText}>{errors.image}</Text>}
@@ -870,6 +920,98 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
 
                 </View>
             </ScrollView>
+
+            {/* Offline Gallery Modal */}
+            <Modal
+                visible={showOfflineGallery}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowOfflineGallery(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, darkMode && styles.cardDark]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, darkMode && styles.textWhite]}>Offline Gallery</Text>
+                            <TouchableOpacity onPress={() => setShowOfflineGallery(false)}>
+                                <X size={24} color={darkMode ? "white" : "black"} />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        {offlineReports.length === 0 ? (
+                            <View style={styles.emptyOffline}>
+                                <ImageIcon size={48} color="#9CA3AF" />
+                                <Text style={[styles.emptyOfflineText, darkMode && styles.textGray]}>No offline reports found.</Text>
+                            </View>
+                        ) : (
+                            <>
+                                <FlatList
+                                    data={offlineReports}
+                                    keyExtractor={(item) => item.id}
+                                    renderItem={({ item }) => {
+                                        const alreadySelected = images.includes(item.imageUri);
+                                        const isSelectedInBatch = !!tempSelectedReports.find(r => r.id === item.id);
+                                        
+                                        let isTooFar = false;
+                                        if (images.length > 0 && location) {
+                                            isTooFar = getDistance(location.latitude, location.longitude, item.latitude, item.longitude) > 50;
+                                        } else if (tempSelectedReports.length > 0) {
+                                            const anchor = tempSelectedReports[0];
+                                            isTooFar = getDistance(anchor.latitude, anchor.longitude, item.latitude, item.longitude) > 50;
+                                        }
+
+                                        const isSelectable = !alreadySelected && !isTooFar;
+
+                                        return (
+                                            <TouchableOpacity 
+                                                onPress={() => isSelectable && handleToggleOfflineReport(item)}
+                                                style={[
+                                                    styles.offlineItem, 
+                                                    alreadySelected && styles.offlineItemDisabled,
+                                                    !isSelectable && !alreadySelected && styles.offlineItemDisabled,
+                                                    isSelectedInBatch && styles.offlineItemActive,
+                                                    darkMode && styles.dropdownItemDark
+                                                ]}
+                                                disabled={!isSelectable}
+                                            >
+                                                <Image source={{ uri: item.imageUri }} style={[styles.offlineThumb, alreadySelected && { opacity: 0.5 }, isTooFar && !alreadySelected && { opacity: 0.5 }]} />
+                                                <View style={styles.offlineInfo}>
+                                                    <Text style={[styles.offlineDate, darkMode && styles.textWhite, !isSelectable && { color: '#9CA3AF' }]}>
+                                                        {new Date(item.createdAt).toLocaleString()}
+                                                    </Text>
+                                                    <Text style={[styles.offlineCoords, !isSelectable && { color: '#9CA3AF' }]}>
+                                                        {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
+                                                    </Text>
+                                                    {alreadySelected && (
+                                                        <Text style={styles.statusLabelText}>Already selected</Text>
+                                                    )}
+                                                    {!alreadySelected && isTooFar && (
+                                                        <Text style={styles.statusLabelText}>Too far</Text>
+                                                    )}
+                                                </View>
+                                                {alreadySelected || isSelectedInBatch ? (
+                                                    <CheckCircle size={20} color={alreadySelected ? "#9CA3AF" : "#1E88E5"} />
+                                                ) : (
+                                                    <View style={styles.checkCirclePlaceholder} />
+                                                )}
+                                            </TouchableOpacity>
+                                        );
+                                    }}
+                                />
+                                <TouchableOpacity 
+                                    onPress={handleConfirmOfflineSelection}
+                                    style={[styles.confirmBatchBtn, tempSelectedReports.length === 0 && styles.confirmBatchBtnDisabled]}
+                                    disabled={tempSelectedReports.length === 0}
+                                >
+                                    <Text style={styles.confirmBatchText}>
+                                        Add {tempSelectedReports.length} Selected Photos
+                                    </Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </View>
+            </Modal>
+
             <BottomNav navigation={navigation} darkMode={darkMode} />
         </View>
     );
@@ -890,15 +1032,13 @@ const styles = StyleSheet.create({
     uploadRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
     uploadBtn: { flex: 1, height: 80, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' },
     uploadText: { color: '#1E88E5', marginTop: 4, fontSize: 12, fontWeight: '600' },
-    previewContainer: { width: 270, height: 180, borderRadius: 12, overflow: 'hidden', marginRight: 12, position: 'relative' }, // Updated
+    previewContainer: { width: 270, height: 180, borderRadius: 12, overflow: 'hidden', marginRight: 12, position: 'relative' },
     previewImage: { width: '100%', height: '100%' },
-    uploadBtnSmall: { flex: 1, height: 40, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' }, // New
-    uploadTextSmall: { color: '#1E88E5', marginTop: 4, fontSize: 10, fontWeight: '600' }, // New
+    uploadBtnSmall: { flex: 1, height: 40, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' },
+    uploadTextSmall: { color: '#1E88E5', marginTop: 4, fontSize: 10, fontWeight: '600' },
 
     removeImgBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', flexDirection: 'row', padding: 6, borderRadius: 8, alignItems: 'center' },
     removeImgText: { color: 'white', fontSize: 12, marginLeft: 4 },
-    addImgBtn: { position: 'absolute', bottom: 10, right: 90, backgroundColor: 'rgba(0,0,0,0.6)', flexDirection: 'row', padding: 6, borderRadius: 8, alignItems: 'center' }, // New
-    addImgText: { color: 'white', fontSize: 12, marginLeft: 4, alignItems: 'center' }, // New
 
     aiBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F3E8FF', padding: 10, borderRadius: 8 },
     aiText: { fontSize: 12, color: '#9333EA', marginLeft: 8, fontWeight: '500' },
@@ -935,23 +1075,13 @@ const styles = StyleSheet.create({
     btnDisabled: { backgroundColor: '#93C5FD' },
     submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
-    // Success Screen
-    successTitle: { fontSize: 28, fontWeight: 'bold', color: '#1F2937', marginBottom: 8 },
-    successSub: { color: '#6B7280', fontSize: 16, marginBottom: 32 },
-    summaryCard: { width: '100%', backgroundColor: 'white', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 32 },
-    summaryLabel: { color: '#6B7280', fontSize: 12 },
-    summaryVal: { color: '#1F2937', fontSize: 16, fontWeight: '600' },
-    viewStatusBtn: { width: '100%', backgroundColor: '#1E88E5', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
-    viewStatusText: { color: 'white', fontWeight: 'bold' },
-    submitAgainBtn: { width: '100%', padding: 16, alignItems: 'center' },
-    submitAgainText: { color: '#1E88E5', fontWeight: '600' },
-    buttonContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, gap: 16 }, // Added gap for spacing
+    buttonContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, gap: 16 },
     backButton: {
         backgroundColor: '#E5E7EB',
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
-        flex: 1, // Make it take equal space
+        flex: 1,
     },
     backButtonText: {
         color: '#1F2937',
@@ -963,7 +1093,101 @@ const styles = StyleSheet.create({
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
-        flex: 1, // Make it take equal space
+        flex: 1,
     },
     nextButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end'
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        height: '80%',
+        padding: 20
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold'
+    },
+    emptyOffline: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    emptyOfflineText: {
+        marginTop: 10,
+        color: '#6B7280'
+    },
+    offlineItem: {
+        flexDirection: 'row',
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
+        alignItems: 'center'
+    },
+    offlineItemDisabled: {
+        backgroundColor: '#F3F4F6',
+        opacity: 0.7
+    },
+    offlineItemActive: {
+        backgroundColor: '#EFF6FF',
+        borderLeftWidth: 4,
+        borderLeftColor: '#1E88E5'
+    },
+    offlineThumb: {
+        width: 60,
+        height: 60,
+        borderRadius: 8
+    },
+    offlineInfo: {
+        flex: 1,
+        marginLeft: 12
+    },
+    offlineDate: {
+        fontSize: 14,
+        fontWeight: '600'
+    },
+    offlineCoords: {
+        fontSize: 12,
+        color: '#6B7280'
+    },
+    statusLabelText: {
+        fontSize: 10,
+        color: '#EF4444',
+        fontWeight: 'bold',
+        marginTop: 2
+    },
+    checkCirclePlaceholder: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#D1D5DB'
+    },
+    confirmBatchBtn: {
+        backgroundColor: '#1E88E5',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 16
+    },
+    confirmBatchBtnDisabled: {
+        backgroundColor: '#9CA3AF'
+    },
+    confirmBatchText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16
+    }
 });

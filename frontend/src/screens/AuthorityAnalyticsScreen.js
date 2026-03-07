@@ -13,6 +13,13 @@ const screenWidth = Dimensions.get('window').width;
 
 export default function AuthorityAnalyticsScreen({ navigation: navigationProp }) {
 	const navigation = navigationProp || useNavigation();
+	const MAP_LAYER_OPTIONS = [
+		{ key: 'all', label: 'All' },
+		{ key: 'active', label: 'Active' },
+		{ key: 'resolved', label: 'Resolved' },
+		{ key: 'critical', label: 'Critical' },
+	];
+
 	const [metrics, setMetrics] = useState({
 		total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, criticalFailures: 0, deadlineMissed: 0, escalated: 0, avgResolution: 0, avgRating: 0, deadlineMissRate: 0,
 	});
@@ -25,6 +32,7 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 	const [showFilterModal, setShowFilterModal] = useState(false);
 	const [showChart, setShowChart] = useState(true);
 	const [showMap, setShowMap] = useState(true);
+	const [mapLayer, setMapLayer] = useState('all');
 	const [showExportModal, setShowExportModal] = useState(false);
 	const mapRef = useRef(null);
 
@@ -282,8 +290,27 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 		datasets: [{ data: [metrics.pending, metrics.accepted, metrics.inProgress, metrics.resolved, metrics.appealed] }]
 	};
 
+	const complaintsForMapLayer = useMemo(() => {
+		const resolvedStatuses = new Set(['resolved', 'closed', 'completed']);
+		const activeStatuses = new Set(['pending', 'accepted', 'in_progress', 'assigned', 'appealed']);
+
+		if (mapLayer === 'resolved') {
+			return filteredComplaints.filter((c) => resolvedStatuses.has(String(c.currentStatus || '').toLowerCase()));
+		}
+
+		if (mapLayer === 'critical') {
+			return filteredComplaints.filter((c) => String(c.currentStatus || '').toLowerCase() === 'critical_failure');
+		}
+
+		if (mapLayer === 'active') {
+			return filteredComplaints.filter((c) => activeStatuses.has(String(c.currentStatus || '').toLowerCase()));
+		}
+
+		return filteredComplaints;
+	}, [filteredComplaints, mapLayer]);
+
 	const markerPoints = useMemo(() => {
-		return filteredComplaints
+		return complaintsForMapLayer
 			.map((c) => {
 				const latitude = Number(c.latitude);
 				const longitude = Number(c.longitude);
@@ -295,7 +322,7 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				};
 			})
 			.filter(Boolean);
-	}, [filteredComplaints]);
+	}, [complaintsForMapLayer]);
 
 	const heatmapPoints = useMemo(() => {
 		const buckets = new Map();
@@ -470,12 +497,27 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				<View style={styles.sectionHeader}>
 					<View style={styles.sectionTitleRow}>
 						<MapIcon size={18} color="#1E88E5" />
-						<Text style={styles.sectionTitle}>Geospatial Clusters</Text>
+						<Text style={styles.sectionTitle}>Hotspot by Status Layer</Text>
 					</View>
 					<TouchableOpacity onPress={() => setShowMap(!showMap)}>
 						<Text style={styles.toggleText}>{showMap ? 'Hide' : 'Show'}</Text>
 					</TouchableOpacity>
 				</View>
+				{showMap && (
+					<View style={styles.mapLayerRow}>
+						{MAP_LAYER_OPTIONS.map((option) => (
+							<TouchableOpacity
+								key={option.key}
+								style={[styles.mapLayerChip, mapLayer === option.key && styles.mapLayerChipActive]}
+								onPress={() => setMapLayer(option.key)}
+							>
+								<Text style={[styles.mapLayerChipText, mapLayer === option.key && styles.mapLayerChipTextActive]}>
+									{option.label}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</View>
+				)}
 				{showMap && (
 					<View style={styles.mapWrapper}>
 						<MapView
@@ -714,6 +756,33 @@ const styles = StyleSheet.create({
 	sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
 	toggleText: { fontSize: 12, color: '#1E88E5', fontWeight: '600' },
 	chartStyle: { marginLeft: -16, borderRadius: 16 },
+	mapLayerRow: {
+		flexDirection: 'row',
+		gap: 8,
+		marginTop: -8,
+		marginBottom: 12,
+		flexWrap: 'wrap',
+	},
+	mapLayerChip: {
+		paddingHorizontal: 10,
+		paddingVertical: 6,
+		borderRadius: 999,
+		backgroundColor: '#F3F4F6',
+		borderWidth: 1,
+		borderColor: '#E5E7EB',
+	},
+	mapLayerChipActive: {
+		backgroundColor: '#1E88E5',
+		borderColor: '#1E88E5',
+	},
+	mapLayerChipText: {
+		fontSize: 12,
+		fontWeight: '600',
+		color: '#4B5563',
+	},
+	mapLayerChipTextActive: {
+		color: '#FFFFFF',
+	},
 	mapWrapper: { height: 220, borderRadius: 12, overflow: 'hidden' },
 	map: { width: '100%', height: '100%' },
 	mapEmptyState: {

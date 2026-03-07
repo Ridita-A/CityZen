@@ -85,10 +85,11 @@ async def detect_with_llm(
 
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        # Parse categories
-        category_list: List[Dict[str, Any]] = json.loads(categories)
+        # Parse categories and build case-insensitive mappings
+        category_list = json.loads(categories)
         allowed_category_names = [cat['name'] for cat in category_list]
-        category_name_to_id = {cat['name']: cat['id'] for cat in category_list}
+        category_name_to_id = {cat['name'].lower(): cat['id'] for cat in category_list}
+        category_name_original = {cat['name'].lower(): cat['name'] for cat in category_list}
 
         prompt = f"""
 You are a civic issue detection AI for Dhaka city.
@@ -151,12 +152,24 @@ Output JSON schema:
         is_new_category = bool(parsed.get("is_new_category", False))
         category_description = parsed.get("category_description", "")
 
+        # Normalize case for lookup
+        detected_label_lower = detected_label.lower()
+        
         # Get the DB category ID (only meaningful for known categories)
-        category_id = category_name_to_id.get(detected_label) if not is_new_category else None
+        category_id = category_name_to_id.get(detected_label_lower) if not is_new_category else None
 
         # Safety net: if label returned but not in DB and not flagged as new, flag it now
-        if detected_label != "No Issue" and not is_new_category and category_id is None:
-            is_new_category = True
+        if detected_label.lower() != "no issue" and not is_new_category and category_id is None:
+            # Check if it matches existing by ignoring case just in case the AI messed up is_new_category flag
+            if detected_label_lower in category_name_to_id:
+                category_id = category_name_to_id[detected_label_lower]
+                is_new_category = False
+            else:
+                is_new_category = True
+                
+        # If it matched an existing category, normalize the label to the exact DB spelling
+        if category_id is not None and detected_label_lower in category_name_original:
+            detected_label = category_name_original[detected_label_lower]
 
         return {
             "id": category_id,

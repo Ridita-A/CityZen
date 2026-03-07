@@ -391,27 +391,22 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         if (aiResult.confidence < CONFIDENCE_THRESHOLD) return;
         if (categories.length === 0) return;
 
-        // If the AI flagged this as a new/unknown category, enter draft mode
-        if (aiResult.is_new_category === true) {
-            setUnknownCategoryLabel(aiResult.label);
-            setUnknownCategoryDescription(aiResult.category_description || '');
-            setIsDraftMode(true);
-            setSelectedCategory(null);
-            return;
-        }
-
-        // Try to match by ID first, then by name as fallback
+        // Check local DB categories first for a label that already exists in the DB 
         const matchedCategory =
             categories.find(cat => cat.id === aiResult.id) ||
             categories.find(cat => cat.name?.toLowerCase() === aiResult.label?.toLowerCase());
 
         if (matchedCategory) {
+            // Found in DB — this is a known category, never treat it as draft
             setSelectedCategory(matchedCategory);
             setIsDraftMode(false);
             setUnknownCategoryLabel(null);
             setUnknownCategoryDescription(null);
-        } else if (aiResult.label && aiResult.label !== 'No Issue') {
-            // Label returned but no DB match — treat as unknown
+            return;
+        }
+
+        // Not in DB — now trust the LLM's is_new_category flag
+        if (aiResult.is_new_category === true || (aiResult.label && aiResult.label !== 'No Issue')) {
             setUnknownCategoryLabel(aiResult.label);
             setUnknownCategoryDescription(aiResult.category_description || '');
             setIsDraftMode(true);

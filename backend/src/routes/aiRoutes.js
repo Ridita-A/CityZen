@@ -64,7 +64,7 @@ router.post('/detect-with-openrouter', upload.single('image'), async (req, res) 
 
     const formData = new FormData();
     formData.append('image', req.file.buffer, { filename: req.file.originalname, contentType: req.file.mimetype });
-    formData.append('categories', JSON.stringify(categoryList)); // Send categories as JSON string
+    formData.append('categories', JSON.stringify(categoryList));
 
     const openrouterRes = await axios.post(
       `${OPENROUTER_API_URL}/detect_with_llm`,
@@ -72,10 +72,25 @@ router.post('/detect-with-openrouter', upload.single('image'), async (req, res) 
       { headers: { ...formData.getHeaders(), 'Content-Type': `multipart/form-data; boundary=${formData._boundary}` } }
     );
 
-    res.json(openrouterRes.data);
+    const llmData = openrouterRes.data;
+    const detectedLabel = (llmData.label || '').trim();
+
+    const normalizedLabel = detectedLabel.toLowerCase();
+    const matchedCategory = categoryList.find(c => c.name.toLowerCase().trim() === normalizedLabel);
+
+    const isNewCategory = !matchedCategory && normalizedLabel !== 'no issue' && detectedLabel !== '';
+    const categoryId = matchedCategory ? matchedCategory.id : null;
+    // Normalize label to the exact DB spelling if matched
+    const resolvedLabel = matchedCategory ? matchedCategory.name : detectedLabel;
+
+    res.json({
+      ...llmData,
+      id: categoryId,
+      label: resolvedLabel,
+      is_new_category: isNewCategory,
+    });
   } catch (err) {
     console.error(err);
-    // Ensure file is deleted even if an error occurs
     if (req.file && req.file.path) {
       fs.unlinkSync(req.file.path);
     }

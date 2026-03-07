@@ -1,7 +1,22 @@
-const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, sequelize, User, Citizen } = require('../models');
+const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, ComplaintBump, sequelize, User, Citizen } = require('../models');
 const { Op } = require('sequelize');
 const supabase = require('../config/supabase'); // Import Supabase client
 const axios = require('axios');
+
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+const BUMP_BLOCKED_STATUSES = ['resolved', 'rejected', 'completed', 'closed'];
+
+const isBumpableStatus = (status) => !BUMP_BLOCKED_STATUSES.includes(String(status || '').toLowerCase());
+
+const getMostRecentCitizenBump = async (complaintId, citizenUid) => {
+  if (!complaintId || !citizenUid) return null;
+
+  return ComplaintBump.findOne({
+    where: { complaintId, citizenUid },
+    attributes: ['id', 'bumpedAt'],
+    order: [['bumpedAt', 'DESC']],
+  });
+};
 
 // CREATE COMPLAINT
 // CREATE COMPLAINT
@@ -103,17 +118,17 @@ exports.createComplaint = async (req, res) => {
     if (exactMatch) {
       // 3. The "Bump" Intercept
       // Check if duplicate has had NO authority activity for 3+ days
-      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
       const lastActivity = exactMatch.lastAuthorityActivityAt || exactMatch.updatedAt; // Fallback to updated if null
 
       const isInactive = new Date(lastActivity) < threeDaysAgo;
 
       await t.rollback();
 
-      if (isInactive) {
+      if (isInactive && isBumpableStatus(exactMatch.currentStatus)) {
         // Check if user has already bumped recently (e.g. within 3 days)
-        const lastBump = exactMatch.lastBumpedAt;
-        const canBump = !lastBump || new Date(lastBump) < threeDaysAgo;
+        const lastCitizenBump = await getMostRecentCitizenBump(exactMatch.id, citizenUid);
+        const canBump = !lastCitizenBump || new Date(lastCitizenBump.bumpedAt) < threeDaysAgo;
 
         if (canBump) {
           return res.status(409).json({
@@ -908,6 +923,9 @@ exports.getComplaintsByAuthority = async (req, res) => {
         },
       ],
       order: [
+        ['bumpCount', 'DESC'],
+        ['priorityScore', 'DESC'],
+        ['lastBumpedAt', 'DESC'],
         ['createdAt', 'DESC']
       ],
       limit: parseInt(limit),
@@ -983,6 +1001,16 @@ exports.getComplaintById = async (req, res) => {
     if (assignment) {
       plainComplaint.AuthorityCompany = assignment.AuthorityCompany;
     }
+
+    // Include persistent bump history metadata for complaint details.
+    const bumpRows = await ComplaintBump.findAll({
+      where: { complaintId: id },
+      attributes: ['id', 'citizenUid', 'bumpedAt'],
+      order: [['bumpedAt', 'DESC']],
+      limit: 20,
+    });
+    plainComplaint.bumpHistory = bumpRows;
+    plainComplaint.bumpHistoryCount = await ComplaintBump.count({ where: { complaintId: id } });
 
     // Sign image URLs to ensure accessibility
     const bucketName = 'cityzen-media';
@@ -1064,6 +1092,8 @@ exports.updateComplaintStatus = async (req, res) => {
     await complaint.update({
       currentStatus,
       statusNotes: statusNotes || complaint.statusNotes,
+      // Any status movement from authority/admin counts as fresh authority activity.
+      lastAuthorityActivityAt: new Date(),
     }, { transaction: t });
 
     // Upload images if provided
@@ -1112,6 +1142,12 @@ exports.bumpComplaint = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
+    const { citizenUid } = req.body;
+
+    if (!citizenUid) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Missing citizenUid in request body.' });
+    }
 
     const complaint = await Complaint.findByPk(id);
     if (!complaint) {
@@ -1119,9 +1155,26 @@ exports.bumpComplaint = async (req, res) => {
       return res.status(404).json({ message: 'Complaint not found.' });
     }
 
-    // Check bump eligibility (3+ days since last bump)
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-    if (complaint.lastBumpedAt && new Date(complaint.lastBumpedAt) > threeDaysAgo) {
+    if (complaint.citizenUid !== citizenUid) {
+      await t.rollback();
+      return res.status(403).json({ message: 'Only the complaint owner can bump this complaint.' });
+    }
+
+    if (!isBumpableStatus(complaint.currentStatus)) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Only open complaints can be bumped.' });
+    }
+
+    const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
+    const lastAuthorityActivity = complaint.lastAuthorityActivityAt || complaint.updatedAt;
+    if (lastAuthorityActivity && new Date(lastAuthorityActivity) > threeDaysAgo) {
+      await t.rollback();
+      return res.status(400).json({ message: 'This complaint cannot be bumped yet because authority activity was recorded within the last 3 days.' });
+    }
+
+    // Enforce cooldown per citizen, not globally for the complaint.
+    const lastCitizenBump = await getMostRecentCitizenBump(complaint.id, citizenUid);
+    if (lastCitizenBump && new Date(lastCitizenBump.bumpedAt) > threeDaysAgo) {
       await t.rollback();
       return res.status(400).json({ message: 'You can only bump this complaint once every 3 days.' });
     }
@@ -1138,16 +1191,27 @@ exports.bumpComplaint = async (req, res) => {
 
     const boost = Math.ceil(daysSinceSubmission * 10);
     const newPriority = (complaint.priorityScore || 0) + boost;
+    const newBumpCount = (complaint.bumpCount || 0) + 1;
+    const bumpedAt = new Date();
 
     await complaint.update({
       priorityScore: newPriority,
-      lastBumpedAt: new Date()
+      bumpCount: newBumpCount,
+      lastBumpedAt: bumpedAt
+    }, { transaction: t });
+
+    await ComplaintBump.create({
+      complaintId: complaint.id,
+      citizenUid,
+      bumpedAt,
     }, { transaction: t });
 
     await t.commit();
     res.json({
       message: 'Complaint priority bumped successfully!',
-      priorityScore: newPriority
+      priorityScore: newPriority,
+      bumpCount: newBumpCount,
+      bumpedBy: citizenUid
     });
 
   } catch (error) {
@@ -1281,6 +1345,10 @@ exports.deleteComplaint = async (req, res) => {
         transaction: t,
       }),
       ComplaintReport.destroy({
+        where: { complaintId: id },
+        transaction: t,
+      }),
+      ComplaintBump.destroy({
         where: { complaintId: id },
         transaction: t,
       }),

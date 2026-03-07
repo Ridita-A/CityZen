@@ -15,9 +15,30 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [isGenerating, setIsGenerating] = useState(false);
 
+    const sortComplaintsByBump = (items = []) => {
+        return [...items].sort((a, b) => {
+            const aBumps = Number(a?.bumpCount || 0);
+            const bBumps = Number(b?.bumpCount || 0);
+            if (bBumps !== aBumps) return bBumps - aBumps;
+
+            const aPriority = Number(a?.priorityScore || 0);
+            const bPriority = Number(b?.priorityScore || 0);
+            if (bPriority !== aPriority) return bPriority - aPriority;
+
+            const aLastBump = a?.lastBumpedAt ? new Date(a.lastBumpedAt).getTime() : 0;
+            const bLastBump = b?.lastBumpedAt ? new Date(b.lastBumpedAt).getTime() : 0;
+            if (bLastBump !== aLastBump) return bLastBump - aLastBump;
+
+            const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bCreated - aCreated;
+        });
+    };
+
     useEffect(() => {
-        setComplaints(initialComplaints || []);
-        setFilteredComplaints(initialComplaints || []);
+        const sorted = sortComplaintsByBump(initialComplaints || []);
+        setComplaints(sorted);
+        setFilteredComplaints(sorted);
     }, [initialComplaints]);
 
     const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -27,7 +48,7 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
         years.push(y);
     }
 
-    const StatusBadge = ({ status }) => {
+    const StatusBadge = ({ status, bumpCount }) => {
         const s = status ? status.toLowerCase() : '';
         const isResolved = ['resolved', 'closed', 'completed'].includes(s);
         const isPending = s === 'pending';
@@ -46,8 +67,15 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
         else if (isRejected) { bg = '#FEE2E2'; color = '#991B1B'; }
 
         return (
-            <View style={[styles.badge, { backgroundColor: bg }]}>
-                <Text style={[styles.badgeText, { color }]}>{text}</Text>
+            <View style={styles.badgeRow}>
+                {Number(bumpCount || 0) > 0 && (
+                    <View style={styles.bumpBadge}>
+                        <Text style={styles.bumpBadgeText}>BUMPED {Number(bumpCount)}x</Text>
+                    </View>
+                )}
+                <View style={[styles.badge, { backgroundColor: bg }]}>
+                    <Text style={[styles.badgeText, { color }]}>{text}</Text>
+                </View>
             </View>
         );
     };
@@ -373,7 +401,7 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
                                     {item.description || 'No description provided'}
                                 </Text>
                             </View>
-                            <StatusBadge status={item.currentStatus} />
+                            <StatusBadge status={item.currentStatus} bumpCount={item.bumpCount} />
                         </View>
 
                         <View style={[styles.cardFooter, darkMode && styles.cardFooterDark]}>
@@ -468,6 +496,17 @@ const styles = StyleSheet.create({
     cardContent: { flex: 1, marginRight: 12 },
     cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 4 },
     cardDesc: { fontSize: 14, color: '#6B7280', lineHeight: 20 },
+    badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    bumpBadge: {
+        backgroundColor: '#FEF3C7',
+        borderWidth: 1,
+        borderColor: '#F59E0B',
+        borderRadius: 999,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        alignSelf: 'flex-start'
+    },
+    bumpBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
     badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
     badgeText: { fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
     cardFooter: {

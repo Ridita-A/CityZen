@@ -245,7 +245,9 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     try {
       if (!userData || !userData.firebaseUid) return Alert.alert('Error', 'Please login to bump');
 
-      const res = await api.post(`/complaints/${complaintIdToFetch}/bump`);
+      const res = await api.post(`/complaints/${complaintIdToFetch}/bump`, {
+        citizenUid: userData.firebaseUid
+      });
 
       Alert.alert("Success 🚀", "Complaint Bumped to Top of Queue!");
       fetchComplaintData(); // Refresh to update lastBumpedAt

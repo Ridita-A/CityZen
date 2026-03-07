@@ -131,6 +131,8 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
               time: new Date(c.createdAt).toLocaleDateString(),
               createdAt: c.createdAt, // Keep raw date for filtering
               upvotes: c.upvotes || 0,
+              bumpCount: c.bumpCount || 0,
+              lastBumpedAt: c.lastBumpedAt || null,
               category: c.Category ? c.Category.name : 'Uncategorized',
               description: c.description,
               citizenProof: c.images && c.images.length > 0 ? c.images[0].imageURL : 'https://via.placeholder.com/400'
@@ -406,7 +408,14 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
             renderItem={({ item }) => (
               <View style={[styles.workCard, darkMode && styles.cardDark]}>
                 <TouchableOpacity onPress={() => navigation.navigate('AuthorityComplaintDetail', { id: item.id, initialData: item })}>
-                  <Text style={[styles.workTitle, darkMode && styles.textWhite]} numberOfLines={1}>{item.title}</Text>
+                  <View style={styles.workTitleRow}>
+                    <Text style={[styles.workTitle, darkMode && styles.textWhite]} numberOfLines={1}>{item.title}</Text>
+                    {item.bumpCount > 0 && (
+                      <View style={styles.bumpBadge}>
+                        <Text style={styles.bumpBadgeText}>BUMPED {item.bumpCount}x</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.workLoc}>{item.location} • {item.ward}</Text>
                 </TouchableOpacity>
                 <View style={styles.cardDivider} />
@@ -538,8 +547,15 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowTop}>
                     <Text style={[styles.ledgerTitle, darkMode && styles.textWhite, { flex: 1, marginRight: 10 }]} numberOfLines={1}>{item.title}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
-                      <Text style={[styles.statusBadgeText, { color: colors.text }]}>{item.status}</Text>
+                    <View style={styles.rowTopBadges}>
+                      {item.bumpCount > 0 && (
+                        <View style={styles.bumpBadge}>
+                          <Text style={styles.bumpBadgeText}>BUMPED {item.bumpCount}x</Text>
+                        </View>
+                      )}
+                      <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
+                        <Text style={[styles.statusBadgeText, { color: colors.text }]}>{item.status}</Text>
+                      </View>
                     </View>
                   </View>
                   <View style={styles.rowBottom}>
@@ -834,6 +850,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, marginLeft: 10 },
   ledgerRow: { backgroundColor: 'white', padding: 16, borderRadius: 15, marginBottom: 10 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rowTopBadges: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ledgerTitle: { fontSize: 14, fontWeight: 'bold' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   statusBadgeText: { fontSize: 10, fontWeight: 'bold' },
@@ -849,8 +866,23 @@ const styles = StyleSheet.create({
   toggleText: { fontWeight: 'bold', color: '#6B7280', fontSize: 12 },
   toggleTextActive: { color: '#1E88E5' },
   workCard: { backgroundColor: 'white', padding: 16, borderRadius: 15, marginBottom: 10 },
+  workTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   workTitle: { fontWeight: 'bold', fontSize: 15 },
   workLoc: { fontSize: 12, color: '#6B7280', marginTop: 4 },
+  bumpBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start'
+  },
+  bumpBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E'
+  },
   cardDivider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 12 },
   actionRow: { flexDirection: 'row', justifyContent: 'space-between' },
   btn: { flex: 1, height: 38, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginHorizontal: 4 },

@@ -73,6 +73,10 @@ const Complaint = sequelize.define('Complaint', {
     type: DataTypes.DATE,
     allowNull: true
   },
+  bumpCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
   priorityScore: {
     type: DataTypes.INTEGER,
     defaultValue: 0

@@ -13,6 +13,7 @@ const AuthorityCompanyAreas = require('./AuthorityCompanyAreas');
 const Upvote = require('./Upvote');
 const ComplaintReport = require('./ComplaintReport');
 const PendingCategoryRequest = require('./PendingCategoryRequest');
+const ComplaintBump = require('./ComplaintBump');
 
 // --- Define Associations (One-to-One) ---
 
@@ -114,6 +115,12 @@ Upvote.belongsTo(Citizen, { foreignKey: 'citizenUid', targetKey: 'UserFirebaseUi
 Complaint.hasMany(ComplaintReport, { foreignKey: 'complaintId', as: 'reports' });
 ComplaintReport.belongsTo(Complaint, { foreignKey: 'complaintId' });
 
+// Complaint bump history associations
+Complaint.hasMany(ComplaintBump, { foreignKey: 'complaintId', as: 'bumps' });
+ComplaintBump.belongsTo(Complaint, { foreignKey: 'complaintId' });
+Citizen.hasMany(ComplaintBump, { foreignKey: 'citizenUid', sourceKey: 'UserFirebaseUid' });
+ComplaintBump.belongsTo(Citizen, { foreignKey: 'citizenUid', targetKey: 'UserFirebaseUid' });
+
 // PendingCategoryRequest to Complaint associations
 PendingCategoryRequest.hasMany(Complaint, { foreignKey: 'pendingCategoryRequestId', as: 'draftComplaints' });
 Complaint.belongsTo(PendingCategoryRequest, { foreignKey: 'pendingCategoryRequestId' });
@@ -134,5 +141,6 @@ module.exports = {
   AuthorityCompanyAreas,
   Upvote,
   ComplaintReport,
-  PendingCategoryRequest
+  PendingCategoryRequest,
+  ComplaintBump
 };

@@ -290,6 +290,8 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
         );
     }
 
+    const bumpCount = Number(complaint?.bumpCount || 0);
+
     return (
         <View style={[styles.container, darkMode && styles.darkContainer]}>
             <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
@@ -312,10 +314,17 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                     <View style={[styles.card, darkMode && styles.cardDark]}>
                         <View style={styles.headerRow}>
                             <Text style={[styles.title, darkMode && styles.textWhite]}>{complaint?.title || 'Untitled Complaint'}</Text>
-                            <View style={[styles.statusBadge, { backgroundColor: (complaint?.currentStatus === 'pending' ? '#FEF3C7' : '#D1FAE5') }]}>
-                                <Text style={[styles.statusBadgeText, { color: (complaint?.currentStatus === 'pending' ? '#92400E' : '#065F46') }]}>
-                                    {(complaint?.currentStatus || 'pending').replace('_', ' ').toUpperCase()}
-                                </Text>
+                            <View style={styles.statusBadgesCol}>
+                                {bumpCount > 0 && (
+                                    <View style={styles.bumpBadge}>
+                                        <Text style={styles.bumpBadgeText}>BUMPED {bumpCount}x</Text>
+                                    </View>
+                                )}
+                                <View style={[styles.statusBadge, { backgroundColor: (complaint?.currentStatus === 'pending' ? '#FEF3C7' : '#D1FAE5') }]}>
+                                    <Text style={[styles.statusBadgeText, { color: (complaint?.currentStatus === 'pending' ? '#92400E' : '#065F46') }]}>
+                                        {(complaint?.currentStatus || 'pending').replace('_', ' ').toUpperCase()}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
 
@@ -397,12 +406,6 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
                                     {complaint?.appealReason || "Citizen has filed an appeal for this resolution."}
                                 </Text>
                             </View>
-                            {complaint?.adminRemarks && (
-                                <View style={[styles.remarkBox, styles.adminRemarkBox]}>
-                                    <Text style={[styles.label, { color: '#B91C1C', marginBottom: 4 }]}>ADMIN INSTRUCTIONS:</Text>
-                                    <Text style={[styles.remarkText, darkMode && styles.textWhite]}>{complaint.adminRemarks}</Text>
-                                </View>
-                            )}
                         </View>
                     )}
 
@@ -653,6 +656,17 @@ const styles = StyleSheet.create({
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
     title: { fontSize: 22, fontWeight: 'bold', color: '#1F2937', flex: 1, marginRight: 10 },
 
+    statusBadgesCol: { alignItems: 'flex-end' },
+    bumpBadge: {
+        backgroundColor: '#FEF3C7',
+        borderWidth: 1,
+        borderColor: '#F59E0B',
+        borderRadius: 999,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        marginBottom: 6
+    },
+    bumpBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
     statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
     statusBadgeText: { fontSize: 12, fontWeight: 'bold', letterSpacing: 0.5 },
 

@@ -222,7 +222,15 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
   const handleBump = async (complaintId) => {
     try {
       setIsSubmitting(true);
-      const response = await axios.post(`${API_URL}/api/complaints/${complaintId}/bump`, {}, {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      const userData = userDataStr ? JSON.parse(userDataStr) : null;
+      const citizenUid = userData?.firebaseUid || userData?.uid || userData?.id;
+
+      if (!citizenUid) {
+        throw new Error('Missing citizen identity for bump request.');
+      }
+
+      const response = await axios.post(`${API_URL}/api/complaints/${complaintId}/bump`, { citizenUid }, {
         headers: { 'bypass-tunnel-reminder': 'true' }
       });
 

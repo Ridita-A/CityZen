@@ -7,7 +7,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import {
   User, Mail, Lock, MapPin, Building2, ShieldCheck,
-  CheckSquare, Square, Briefcase, Key, CheckCircle
+  CheckSquare, Square, Briefcase, Key
 } from 'lucide-react-native';
 import axios from 'axios';
 import { auth } from '../config/firebase';
@@ -91,11 +91,16 @@ export default function SignupScreen({ navigation }) {
         authorityCompanyId: role === 'authority' ? formData.authorityCompanyId : undefined,
         adminCode: formData.adminCode,
       };
-      const response = await axios.post(`${API_URL}/api/users`, profileData, {
+      const response = await axios.post(`${API_URL}/api/auth/signup/request-otp`, profileData, {
         headers: { 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' }
       });
-      if (response.status === 201) setStep(3);
-      else Alert.alert('Error', 'Profile creation failed.');
+
+      navigation.navigate('EmailOtp', {
+        purpose: 'signup',
+        challengeId: response.data?.challengeId,
+        email: formData.email,
+        signupPayload: profileData,
+      });
     } catch (error) {
       let msg = 'Unexpected error';
       if (error.code === 'auth/email-already-in-use') msg = 'Email already in use!';
@@ -217,17 +222,6 @@ export default function SignupScreen({ navigation }) {
     </View>
   );
 
-  const renderSuccess = () => (
-    <View style={styles.successContainer}>
-      <CheckCircle size={80} color="#16A34A" />
-      <Text style={styles.successTitle}>Account Created!</Text>
-      <Text style={styles.successSub}>Your {role} account has been successfully created. You can now log in.</Text>
-      <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.submitBtn}>
-        <Text style={styles.submitBtnText}>Go to Login</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: 'white', padding: 24 }}>
@@ -238,13 +232,10 @@ export default function SignupScreen({ navigation }) {
 
         {step === 1 && renderRoleSelection()}
         {step === 2 && renderForm()}
-        {step === 3 && renderSuccess()}
 
-        {step !== 3 && (
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.loginLink} disabled={loading}>
-            <Text style={{ color: '#6B7280' }}>Already have an account? <Text style={{ color: '#1E88E5', fontWeight: 'bold' }}>Log in</Text></Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.loginLink} disabled={loading}>
+          <Text style={{ color: '#6B7280' }}>Already have an account? <Text style={{ color: '#1E88E5', fontWeight: 'bold' }}>Log in</Text></Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -267,7 +258,4 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: '#1E88E5', borderRadius: 12, height: 56, alignItems: 'center', justifyContent: 'center', elevation: 4, width: '100%' },
   submitBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   loginLink: { marginTop: 24, alignItems: 'center' },
-  successContainer: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 40 },
-  successTitle: { fontSize: 28, fontWeight: 'bold', color: '#1F2937', marginTop: 24, marginBottom: 8 },
-  successSub: { fontSize: 16, color: '#6B7280', textAlign: 'center', marginBottom: 32 },
 });

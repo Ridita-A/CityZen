@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, TextInput as RNTextInput, KeyboardAvoidingView, Platform, Animated } from 'react-native';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, TextInput as RNTextInput, KeyboardAvoidingView, Platform, Animated, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -31,6 +31,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
   const [appealReason, setAppealReason] = useState('');
   const [appealImages, setAppealImages] = useState([]);
   const [appealSubmitting, setAppealSubmitting] = useState(false);
+  const [criticalFailureModalVisible, setCriticalFailureModalVisible] = useState(false);
 
   // Double-tap for upvote
   const [lastImageTap, setLastImageTap] = useState(0);
@@ -73,7 +74,8 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     closed: 3,
     rejected: 0,
     appealed: 2,
-    completed: 3
+    completed: 3,
+    critical_failure: 2,
   };
   const currentStep = statusToStepIndex[(complaint?.currentStatus || 'pending')] ?? 0;
 
@@ -235,6 +237,22 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     }
   }, [complaintIdToFetch]);
 
+  useEffect(() => {
+    const maybeShowCriticalFailureModal = async () => {
+      if (!complaint || complaint.currentStatus !== 'critical_failure') return;
+      const key = `criticalFailureSeen:${complaint.id}`;
+      const seen = await AsyncStorage.getItem(key);
+      // Always show for testing - comment out this check to show modal only once
+      setCriticalFailureModalVisible(true);
+      // if (!seen) {
+      //   setCriticalFailureModalVisible(true);
+      //   await AsyncStorage.setItem(key, '1');
+      // }
+    };
+
+    maybeShowCriticalFailureModal();
+  }, [complaint]);
+
   useFocusEffect(
     useCallback(() => {
       fetchComplaintData();
@@ -245,7 +263,9 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     try {
       if (!userData || !userData.firebaseUid) return Alert.alert('Error', 'Please login to bump');
 
-      const res = await api.post(`/complaints/${complaintIdToFetch}/bump`);
+      const res = await api.post(`/complaints/${complaintIdToFetch}/bump`, {
+        citizenUid: userData.firebaseUid
+      });
 
       Alert.alert("Success 🚀", "Complaint Bumped to Top of Queue!");
       fetchComplaintData(); // Refresh to update lastBumpedAt
@@ -268,7 +288,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     if (complaint.citizenUid !== uid) return false;
 
     // 2. Must be open
-    if (['resolved', 'closed', 'rejected', 'completed'].includes(complaint.currentStatus)) return false;
+    if (['resolved', 'closed', 'rejected', 'completed', 'critical_failure'].includes(complaint.currentStatus)) return false;
 
     // 3. Must be inactive > 3 days
     const threeDays = 3 * 24 * 60 * 60 * 1000;
@@ -370,6 +390,28 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
                   <Text style={styles.authorityInfoContact}>{complaint.AuthorityCompany.description}</Text>
                 )}
               </View>
+            )}
+
+            {complaint?.forwardedByAdmin && (
+              <View style={styles.escalationInfoCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <AlertCircle size={16} color="#B91C1C" />
+                  <Text style={[styles.escalationInfoTitle]}>Escalated To City Admin</Text>
+                </View>
+                <Text style={styles.escalationInfoText}>
+                  {complaint?.userEscalationMessage || 'We hear you. This issue has been escalated to the City Admin for manual intervention and department review.'}
+                </Text>
+              </View>
+            )}
+
+            {complaint?.misconductReportDownloadUrl && (
+              <TouchableOpacity
+                style={styles.downloadReportButton}
+                onPress={() => Linking.openURL(complaint.misconductReportDownloadUrl)}
+              >
+                <AlertCircle size={16} color="#7F1D1D" />
+                <Text style={styles.downloadReportText}>Warning: Download PDF Report</Text>
+              </TouchableOpacity>
             )}
 
             {/* Bump Button - Prominent Placement */}
@@ -667,6 +709,43 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
         </View>
       </Modal>
 
+      {/* Critical Failure Apology Modal */}
+      <Modal
+        visible={criticalFailureModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setCriticalFailureModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, darkMode && styles.cardDark, styles.criticalModalCard]}>
+            <Text style={styles.criticalTitle}>Critical Failure Recorded</Text>
+            <Text style={[styles.criticalBody, darkMode && styles.textWhite]}>
+              {complaint?.userCriticalFailureMessage || 'We are deeply sorry for this unacceptable delay. Despite our escalation, the department failed to respond within 48 hours. We take full responsibility for this service failure. An official apology report has been generated, and this incident will be used to improve departmental accountability.'}
+            </Text>
+            <Text style={[styles.criticalAuditText]}>
+              We have taken note of this failure in the department performance audit. Your voice matters, and we are committed to improving our service delivery.
+            </Text>
+
+            {complaint?.misconductReportDownloadUrl ? (
+              <TouchableOpacity
+                style={styles.downloadReportButton}
+                onPress={() => Linking.openURL(complaint.misconductReportDownloadUrl)}
+              >
+                <AlertCircle size={16} color="#7F1D1D" />
+                <Text style={styles.downloadReportText}>Download PDF Report</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.submitBtn, { alignSelf: 'flex-end', marginTop: 12 }]}
+              onPress={() => setCriticalFailureModalVisible(false)}
+            >
+              <Text style={styles.submitText}>Understood</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <BottomNav navigation={navigation} darkMode={darkMode} />
     </View>
   );
@@ -756,6 +835,64 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginLeft: 22,
     marginTop: 4
+  },
+  escalationInfoCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+  },
+  escalationInfoTitle: {
+    color: '#B91C1C',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  escalationInfoText: {
+    color: '#7F1D1D',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  downloadReportButton: {
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  downloadReportText: {
+    color: '#7F1D1D',
+    fontWeight: '700',
+  },
+  criticalModalCard: {
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF1F2',
+  },
+  criticalTitle: {
+    color: '#991B1B',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  criticalBody: {
+    color: '#7F1D1D',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  criticalAuditText: {
+    color: '#B91C1C',
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: '600',
   },
   loaderWrap: { height: 250, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 8, color: '#6B7280' },

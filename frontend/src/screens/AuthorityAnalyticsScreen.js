@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, Modal, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { Download, TrendingUp, CheckCircle, BarChart3, Map as MapIcon, X, Calendar, Filter, Clock, AlertCircle } from 'lucide-react-native';
 import { BarChart } from 'react-native-chart-kit';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Heatmap, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import api from '../services/api';
@@ -13,8 +13,15 @@ const screenWidth = Dimensions.get('window').width;
 
 export default function AuthorityAnalyticsScreen({ navigation: navigationProp }) {
 	const navigation = navigationProp || useNavigation();
+	const MAP_LAYER_OPTIONS = [
+		{ key: 'all', label: 'All' },
+		{ key: 'active', label: 'Active' },
+		{ key: 'resolved', label: 'Resolved' },
+		{ key: 'critical', label: 'Critical' },
+	];
+
 	const [metrics, setMetrics] = useState({
-		total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, avgResolution: 0, avgRating: 0,
+		total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, criticalFailures: 0, deadlineMissed: 0, escalated: 0, avgResolution: 0, avgRating: 0, deadlineMissRate: 0,
 	});
 	const [deptComplaints, setDeptComplaints] = useState([]);
 	const [filteredComplaints, setFilteredComplaints] = useState([]);
@@ -25,7 +32,16 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 	const [showFilterModal, setShowFilterModal] = useState(false);
 	const [showChart, setShowChart] = useState(true);
 	const [showMap, setShowMap] = useState(true);
+	const [mapLayer, setMapLayer] = useState('all');
 	const [showExportModal, setShowExportModal] = useState(false);
+	const mapRef = useRef(null);
+
+	const DEFAULT_REGION = {
+		latitude: 23.8103,
+		longitude: 90.4125,
+		latitudeDelta: 0.1,
+		longitudeDelta: 0.1,
+	};
 
 	const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 	const currentYearNum = new Date().getFullYear();
@@ -61,7 +77,7 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				setDeptComplaints([]);
 				setFilteredComplaints([]);
 				setMetrics({
-					total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, avgResolution: 0, avgRating: 0,
+					total: 0, resolved: 0, pending: 0, appealed: 0, accepted: 0, inProgress: 0, criticalFailures: 0, deadlineMissed: 0, escalated: 0, avgResolution: 0, avgRating: 0, deadlineMissRate: 0,
 				});
 				return;
 			}
@@ -96,7 +112,9 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 
 	const calculateMetrics = (complaints) => {
 		let total = complaints.length;
-		let resolved = 0, pending = 0, appealed = 0, accepted = 0, inProgress = 0, resolutionTimes = [];
+		let resolved = 0, pending = 0, appealed = 0, accepted = 0, inProgress = 0, criticalFailures = 0, deadlineMissed = 0, escalated = 0;
+		let resolutionTimes = [];
+		
 		for (const c of complaints) {
 			const status = c.currentStatus ? c.currentStatus.toLowerCase() : '';
 			if (['resolved', 'closed', 'completed'].includes(status)) {
@@ -111,11 +129,19 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			else if (status === 'appealed') appealed++;
 			else if (status === 'accepted') accepted++;
 			else if (status === 'in_progress' || status === 'assigned') inProgress++;
+			else if (status === 'critical_failure') criticalFailures++;
+			
+			// Track deadline performance
+			if (c.adminDeadlineStatus === 'missed' || status === 'critical_failure') deadlineMissed++;
+			if (c.forwardedByAdmin || c.escalationLevel && c.escalationLevel !== 'none') escalated++;
 		}
+		
 		const avgResolution = resolutionTimes.length > 0 ? parseFloat((resolutionTimes.reduce((sum, ms) => sum + ms, 0) / resolutionTimes.length / 1000 / 60 / 60).toFixed(1)) : 0;
 		const ratings = complaints.filter(c => c.rating != null).map(c => c.rating);
 		const avgRating = ratings.length > 0 ? parseFloat((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : 0;
-		setMetrics({ total, resolved, pending, appealed, accepted, inProgress, avgResolution, avgRating });
+		const deadlineMissRate = total > 0 ? ((deadlineMissed / total) * 100).toFixed(1) : 0;
+		
+		setMetrics({ total, resolved, pending, appealed, accepted, inProgress, criticalFailures, deadlineMissed, escalated, avgResolution, avgRating, deadlineMissRate });
 	};
 
 	const openMetricsModal = (type) => {
@@ -125,7 +151,9 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			'pending': 'Pending Cases',
 			'appealed': 'Appeals',
 			'accepted': 'Accepted Cases',
-			'inProgress': 'In Progress'
+			'inProgress': 'In Progress',
+			'escalated': 'Escalated Cases',
+			'criticalFailures': 'Critical Failures'
 		};
 		navigation.navigate('AuthorityComplaintList', {
 			statusFilter: type,
@@ -143,6 +171,8 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			if (metricType === 'appealed') return status === 'appealed';
 			if (metricType === 'accepted') return status === 'accepted';
 			if (metricType === 'inProgress') return ['in_progress', 'assigned'].includes(status);
+			if (metricType === 'criticalFailures') return status === 'critical_failure';
+			if (metricType === 'escalated') return c.forwardedByAdmin || (c.escalationLevel && c.escalationLevel !== 'none');
 			return false;
 		});
 	};
@@ -260,13 +290,70 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 		datasets: [{ data: [metrics.pending, metrics.accepted, metrics.inProgress, metrics.resolved, metrics.appealed] }]
 	};
 
-	const heatmapPoints = filteredComplaints
-		.filter(c => c.latitude && c.longitude)
-		.map(c => ({
-			latitude: parseFloat(c.latitude),
-			longitude: parseFloat(c.longitude),
-			weight: 1
-		}));
+	const complaintsForMapLayer = useMemo(() => {
+		const resolvedStatuses = new Set(['resolved', 'closed', 'completed']);
+		const activeStatuses = new Set(['pending', 'accepted', 'in_progress', 'assigned', 'appealed']);
+
+		if (mapLayer === 'resolved') {
+			return filteredComplaints.filter((c) => resolvedStatuses.has(String(c.currentStatus || '').toLowerCase()));
+		}
+
+		if (mapLayer === 'critical') {
+			return filteredComplaints.filter((c) => String(c.currentStatus || '').toLowerCase() === 'critical_failure');
+		}
+
+		if (mapLayer === 'active') {
+			return filteredComplaints.filter((c) => activeStatuses.has(String(c.currentStatus || '').toLowerCase()));
+		}
+
+		return filteredComplaints;
+	}, [filteredComplaints, mapLayer]);
+
+	const markerPoints = useMemo(() => {
+		return complaintsForMapLayer
+			.map((c) => {
+				const latitude = Number(c.latitude);
+				const longitude = Number(c.longitude);
+				if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+				return {
+					id: c.id,
+					latitude,
+					longitude,
+				};
+			})
+			.filter(Boolean);
+	}, [complaintsForMapLayer]);
+
+	const heatmapPoints = useMemo(() => {
+		const buckets = new Map();
+		for (const point of markerPoints) {
+			const key = `${point.latitude.toFixed(4)}:${point.longitude.toFixed(4)}`;
+			const existing = buckets.get(key);
+			if (existing) {
+				existing.weight += 1;
+			} else {
+				buckets.set(key, {
+					latitude: point.latitude,
+					longitude: point.longitude,
+					weight: 1,
+				});
+			}
+		}
+		return Array.from(buckets.values());
+	}, [markerPoints]);
+
+	useEffect(() => {
+		if (!showMap || markerPoints.length === 0 || !mapRef.current?.fitToCoordinates) return;
+
+		const timer = setTimeout(() => {
+			mapRef.current.fitToCoordinates(markerPoints, {
+				edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+				animated: true,
+			});
+		}, 150);
+
+		return () => clearTimeout(timer);
+	}, [showMap, markerPoints]);
 
 	return (
 		<ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -335,6 +422,14 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 					label="In Progress" value={metrics.inProgress} color="#8B5CF6" loading={loading}
 					onPress={() => openMetricsModal('inProgress')}
 				/>
+				<MetricCard
+					label="Escalated" value={metrics.escalated} color="#F97316" loading={loading}
+					onPress={() => openMetricsModal('escalated')}
+				/>
+				<MetricCard
+					label="Critical Failures" value={metrics.criticalFailures} color="#DC2626" loading={loading}
+					onPress={() => openMetricsModal('criticalFailures')}
+				/>
 
 				{/* Secondary Metrics */}
 				<View style={styles.secondaryMetricContainer}>
@@ -350,6 +445,24 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 						<View style={{ marginLeft: 10 }}>
 							<Text style={styles.secondaryLabel}>Citizen Rating</Text>
 							<Text style={styles.secondaryValue}>{metrics.avgRating}/5.0</Text>
+						</View>
+					</View>
+				</View>
+				
+				{/* Performance Warning Metrics */}
+				<View style={styles.secondaryMetricContainer}>
+					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+						<AlertCircle size={18} color="#DC2626" />
+						<View style={{ marginLeft: 10 }}>
+							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Deadlines Missed</Text>
+							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissed}</Text>
+						</View>
+					</View>
+					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+						<Clock size={18} color="#DC2626" />
+						<View style={{ marginLeft: 10 }}>
+							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Delay Rate</Text>
+							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissRate}%</Text>
 						</View>
 					</View>
 				</View>
@@ -384,23 +497,55 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 				<View style={styles.sectionHeader}>
 					<View style={styles.sectionTitleRow}>
 						<MapIcon size={18} color="#1E88E5" />
-						<Text style={styles.sectionTitle}>Geospatial Clusters</Text>
+						<Text style={styles.sectionTitle}>Hotspot by Status Layer</Text>
 					</View>
 					<TouchableOpacity onPress={() => setShowMap(!showMap)}>
 						<Text style={styles.toggleText}>{showMap ? 'Hide' : 'Show'}</Text>
 					</TouchableOpacity>
 				</View>
 				{showMap && (
+					<View style={styles.mapLayerRow}>
+						{MAP_LAYER_OPTIONS.map((option) => (
+							<TouchableOpacity
+								key={option.key}
+								style={[styles.mapLayerChip, mapLayer === option.key && styles.mapLayerChipActive]}
+								onPress={() => setMapLayer(option.key)}
+							>
+								<Text style={[styles.mapLayerChipText, mapLayer === option.key && styles.mapLayerChipTextActive]}>
+									{option.label}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</View>
+				)}
+				{showMap && (
 					<View style={styles.mapWrapper}>
 						<MapView
+							ref={mapRef}
 							provider={PROVIDER_GOOGLE}
 							style={styles.map}
-							initialRegion={{ latitude: 23.8103, longitude: 90.4125, latitudeDelta: 0.1, longitudeDelta: 0.1 }}
+							initialRegion={DEFAULT_REGION}
 						>
-							{filteredComplaints.filter(c => c.latitude).map((c, i) => (
-								<Marker key={i} coordinate={{ latitude: parseFloat(c.latitude), longitude: parseFloat(c.longitude) }} pinColor="#1E88E5" />
+							{heatmapPoints.length > 0 && (
+								<Heatmap
+									points={heatmapPoints}
+									radius={42}
+									opacity={0.75}
+								/>
+							)}
+							{markerPoints.map((point, index) => (
+								<Marker
+									key={`${point.id || 'point'}-${index}`}
+									coordinate={{ latitude: point.latitude, longitude: point.longitude }}
+									pinColor="#1E88E5"
+								/>
 							))}
 						</MapView>
+						{markerPoints.length === 0 && (
+							<View style={styles.mapEmptyState}>
+								<Text style={styles.mapEmptyText}>No valid complaint coordinates found for this filter.</Text>
+							</View>
+						)}
 					</View>
 				)}
 			</View>
@@ -611,8 +756,46 @@ const styles = StyleSheet.create({
 	sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
 	toggleText: { fontSize: 12, color: '#1E88E5', fontWeight: '600' },
 	chartStyle: { marginLeft: -16, borderRadius: 16 },
+	mapLayerRow: {
+		flexDirection: 'row',
+		gap: 8,
+		marginTop: -8,
+		marginBottom: 12,
+		flexWrap: 'wrap',
+	},
+	mapLayerChip: {
+		paddingHorizontal: 10,
+		paddingVertical: 6,
+		borderRadius: 999,
+		backgroundColor: '#F3F4F6',
+		borderWidth: 1,
+		borderColor: '#E5E7EB',
+	},
+	mapLayerChipActive: {
+		backgroundColor: '#1E88E5',
+		borderColor: '#1E88E5',
+	},
+	mapLayerChipText: {
+		fontSize: 12,
+		fontWeight: '600',
+		color: '#4B5563',
+	},
+	mapLayerChipTextActive: {
+		color: '#FFFFFF',
+	},
 	mapWrapper: { height: 220, borderRadius: 12, overflow: 'hidden' },
 	map: { width: '100%', height: '100%' },
+	mapEmptyState: {
+		position: 'absolute',
+		left: 12,
+		right: 12,
+		bottom: 12,
+		backgroundColor: 'rgba(255,255,255,0.92)',
+		paddingHorizontal: 12,
+		paddingVertical: 8,
+		borderRadius: 10,
+	},
+	mapEmptyText: { color: '#6B7280', fontSize: 12, textAlign: 'center', fontWeight: '600' },
 	modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
 	modalContent: { backgroundColor: 'white', borderRadius: 20, padding: 24, width: '90%', maxWidth: 400 },
 	modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

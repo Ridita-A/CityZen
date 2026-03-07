@@ -1,7 +1,297 @@
-const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, sequelize, User, Citizen } = require('../models');
+const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, ComplaintBump, sequelize, User, Citizen } = require('../models');
 const { Op } = require('sequelize');
 const supabase = require('../config/supabase'); // Import Supabase client
 const axios = require('axios');
+const fs = require('fs');
+const nodePath = require('path');
+const PDFDocument = require('pdfkit');
+
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+const ADMIN_DEADLINE_MS = 48 * 60 * 60 * 1000;
+const BUMP_BLOCKED_STATUSES = ['resolved', 'rejected', 'completed', 'closed', 'critical_failure'];
+const COMMUNITY_ESCALATION_SCORE_THRESHOLD = 12;
+const STAGNATION_DAYS_BY_STATUS = {
+  pending: 7,
+  accepted: 10,
+  in_progress: 14,
+};
+const REPORTS_DIR = nodePath.join(__dirname, '..', 'uploads', 'reports');
+
+const isBumpableStatus = (status) => !BUMP_BLOCKED_STATUSES.includes(String(status || '').toLowerCase());
+
+const computePriorityScore = ({ upvotes = 0, bumpCount = 0, createdAt }) => {
+  const createdAtMs = new Date(createdAt).getTime();
+  const daysSinceSubmission = Number.isFinite(createdAtMs)
+    ? Math.max(1, Math.ceil((Date.now() - createdAtMs) / (1000 * 60 * 60 * 24)))
+    : 1;
+
+  // escalation.pdf formula: Priority = (Upvotes + Bumps) * DaysSinceSubmission
+  return Math.max(0, Math.ceil((Number(upvotes) + Number(bumpCount)) * daysSinceSubmission));
+};
+
+const appendAdminRemark = (existing, nextLine) => {
+  const prefix = '[AUTO-ESCALATION]';
+  const stamped = `${prefix} ${new Date().toISOString()} ${nextLine}`;
+  if (!existing) return stamped;
+  if (String(existing).includes(nextLine)) return existing;
+  return `${existing}\n${stamped}`;
+};
+
+const getEscalationLevel = ({ trackA, trackB }) => {
+  if (trackA && trackB) return 'both';
+  if (trackA) return 'track_a';
+  if (trackB) return 'track_b';
+  return 'none';
+};
+
+const getPublicApiBase = (req) => {
+  const configuredBase = process.env.PUBLIC_API_BASE_URL || process.env.API_PUBLIC_BASE_URL || '';
+  if (configuredBase) return configuredBase.replace(/\/$/, '');
+  if (!req) return '';
+  return `${req.protocol}://${req.get('host')}/api`;
+};
+
+const getMisconductReportDownloadUrl = (complaint, req) => {
+  if (!complaint?.misconductReportPath) return null;
+  const apiBase = getPublicApiBase(req);
+  if (!apiBase) return null;
+  return `${apiBase}/complaints/${complaint.id}/misconduct-report/download`;
+};
+
+const getAuthorityCompanyNameForComplaint = async (complaintId, transaction) => {
+  const assignment = await ComplaintAssignment.findOne({
+    where: { complaintId },
+    include: [{ model: AuthorityCompany, attributes: ['name'] }],
+    transaction,
+  });
+
+  return assignment?.AuthorityCompany?.name || 'Assigned Department';
+};
+
+const ensureReportsDir = () => {
+  if (!fs.existsSync(REPORTS_DIR)) {
+    fs.mkdirSync(REPORTS_DIR, { recursive: true });
+  }
+};
+
+const generateMisconductReportPdf = async (complaint, authorityName) => {
+  ensureReportsDir();
+  const fileName = `misconduct_report_complaint_${complaint.id}_${Date.now()}.pdf`;
+  const absPath = nodePath.join(REPORTS_DIR, fileName);
+
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50 });
+    const stream = fs.createWriteStream(absPath);
+    doc.pipe(stream);
+
+    doc.fontSize(20).text('CITYZEN MUNICIPAL OVERSIGHT', { align: 'center' });
+    doc.moveDown(0.2);
+    doc.fontSize(18).fillColor('#B91C1C').text('OFFICIAL APOLOGY & MISCONDUCT REPORT', { align: 'center' });
+    doc.fillColor('black').moveDown();
+    
+    doc.fontSize(14).fillColor('#B91C1C').text('We Sincerely Apologize', { align: 'center' });
+    doc.fillColor('black').fontSize(10).text(
+      'We deeply regret that this complaint was not addressed in a timely manner. Our citizens deserve better, and we take full responsibility for this service failure.',
+      { align: 'center' }
+    );
+    doc.moveDown();
+
+    doc.fontSize(12).text(`Complaint ID: #${complaint.id}`);
+    doc.text(`Department Responsible: ${authorityName}`);
+    doc.text(`Report Generated: ${new Date().toISOString()}`);
+    doc.text(`Citizen Submitted: ${new Date(complaint.createdAt).toISOString()}`);
+    doc.text(`Escalated to Admin: ${complaint.escalatedAt ? new Date(complaint.escalatedAt).toISOString() : 'N/A'}`);
+    doc.text(`48-Hour Deadline: ${complaint.adminDeadlineAt ? new Date(complaint.adminDeadlineAt).toISOString() : 'N/A'}`);
+    doc.text(`Deadline Missed At: ${complaint.criticalFailureAt ? new Date(complaint.criticalFailureAt).toISOString() : 'N/A'}`);
+    doc.moveDown();
+
+    doc.fontSize(13).text('Case Summary', { underline: true });
+    doc.fontSize(11).text(`Title: ${complaint.title || 'Untitled Complaint'}`);
+    doc.text(`Description: ${complaint.description || 'N/A'}`);
+    doc.text(`Location: ${complaint.latitude}, ${complaint.longitude}`);
+    doc.text(`Status at Failure: ${complaint.currentStatus}`);
+    doc.moveDown();
+
+    doc.fontSize(13).text('Citizen Engagement Metrics', { underline: true });
+    doc.fontSize(11).text(`Community Bumps: ${complaint.bumpCount || 0}`);
+    doc.text(`Public Upvotes: ${complaint.upvotes || 0}`);
+    doc.text(`Priority Score: ${complaint.priorityScore || 0}`);
+    doc.moveDown();
+
+    doc.fontSize(13).text('Official Finding', { underline: true });
+    doc.fontSize(11).text(
+      `The department "${authorityName}" failed to provide any substantive update (status change or photographic evidence) within the mandated 48-hour escalation window. This represents a critical service delivery failure and will be recorded in the department's performance audit.`
+    );
+    doc.moveDown();
+    
+    doc.fontSize(13).text('Citizen Assurance', { underline: true });
+    doc.fontSize(11).text(
+      'We are truly sorry for this delay. Your complaint has been flagged for immediate intervention by city administration. This report will be used to improve departmental accountability and prevent future delays.'
+    );
+
+    doc.end();
+    stream.on('finish', resolve);
+    stream.on('error', reject);
+  });
+
+  return fileName;
+};
+
+const clearActiveEscalationOnSubstantiveUpdate = async (complaint, transaction) => {
+  if (!complaint) return;
+  
+  // Clear escalation flags on any substantive update (status change or proof upload)
+  const updatePayload = {
+    adminDeadlineStatus: 'cleared',
+    adminDeadlineAt: null,
+    escalationLevel: 'none',
+    responseDelayWarningLogged: false,
+    forwardedByAdmin: false,
+  };
+  
+  // Only add remark if there was an active escalation
+  if (complaint.adminDeadlineStatus === 'active' || complaint.forwardedByAdmin || complaint.responseDelayWarningLogged) {
+    updatePayload.adminRemarks = appendAdminRemark(
+      complaint.adminRemarks,
+      '48-hour red alert cleared due to substantive authority update (status change and/or proof upload).'
+    );
+  }
+
+  await complaint.update(updatePayload, { transaction });
+};
+
+const finalizeCriticalFailureIfNeeded = async (complaint, options = {}) => {
+  if (!complaint) return false;
+
+  const { transaction } = options;
+  if (String(complaint.adminDeadlineStatus || '').toLowerCase() !== 'active') return false;
+  if (!complaint.adminDeadlineAt) return false;
+  if (new Date(complaint.adminDeadlineAt).getTime() > Date.now()) return false;
+  if (String(complaint.currentStatus || '').toLowerCase() === 'critical_failure') return false;
+
+  const authorityName = await getAuthorityCompanyNameForComplaint(complaint.id, transaction);
+  const now = new Date();
+  const interimFailureState = {
+    currentStatus: 'critical_failure',
+    adminDeadlineStatus: 'missed',
+    criticalFailureAt: now,
+    escalationLevel: complaint.escalationLevel === 'none' ? 'track_b' : complaint.escalationLevel,
+    adminRemarks: appendAdminRemark(
+      complaint.adminRemarks,
+      `🚨 CRITICAL FAILURE: Department '${authorityName}' missed the 48-hour deadline without substantive update. Performance audit triggered. Apology report generated for citizen.`
+    ),
+  };
+
+  await complaint.update(interimFailureState, { transaction });
+
+  const reportFileName = await generateMisconductReportPdf(complaint, authorityName);
+  await complaint.update({
+    misconductReportPath: reportFileName,
+    misconductReportGeneratedAt: now,
+  }, { transaction });
+
+  return true;
+};
+
+const evaluateComplaintEscalation = async (complaint, options = {}) => {
+  if (!complaint) return { escalated: false };
+
+  const { transaction } = options;
+
+  const transitionedToCriticalFailure = await finalizeCriticalFailureIfNeeded(complaint, { transaction });
+  if (transitionedToCriticalFailure) {
+    await complaint.reload({ transaction });
+    return {
+      escalated: true,
+      trackA: complaint.escalationLevel === 'track_a' || complaint.escalationLevel === 'both',
+      trackB: complaint.escalationLevel === 'track_b' || complaint.escalationLevel === 'both',
+      criticalFailure: true,
+    };
+  }
+
+  // If there was a recent authority update (within last hour), don't re-escalate
+  // This prevents immediately re-flagging after authority clears the escalation
+  if (complaint.lastAuthorityActivityAt) {
+    const hoursSinceUpdate = (Date.now() - new Date(complaint.lastAuthorityActivityAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceUpdate < 1) {
+      return { escalated: false, trackA: false, trackB: false, recentlyUpdated: true };
+    }
+  }
+
+  const status = String(complaint.currentStatus || '').toLowerCase();
+  if (!STAGNATION_DAYS_BY_STATUS[status]) {
+    return { escalated: false, trackA: false, trackB: false, communityScore: 0, inactivityDays: 0 };
+  }
+
+  const bumpCount = Number(complaint.bumpCount || 0);
+  const upvotes = Number(complaint.upvotes || 0);
+  const communityScore = bumpCount * 3 + upvotes;
+
+  const inactivityThresholdDays = STAGNATION_DAYS_BY_STATUS[status] || null;
+  const lastActivityAt = complaint.lastAuthorityActivityAt || complaint.updatedAt || complaint.createdAt;
+  const lastActivityMs = new Date(lastActivityAt).getTime();
+  const inactivityDays = Number.isFinite(lastActivityMs)
+    ? (Date.now() - lastActivityMs) / (1000 * 60 * 60 * 24)
+    : 0;
+
+  const trackA = communityScore >= COMMUNITY_ESCALATION_SCORE_THRESHOLD;
+  const trackB = inactivityThresholdDays !== null && inactivityDays >= inactivityThresholdDays;
+
+  if (!trackA && !trackB) {
+    return { escalated: false, trackA: false, trackB: false, communityScore, inactivityDays };
+  }
+
+  const reasons = [];
+  if (trackA) {
+    reasons.push(`Track A warning triggered: (bumps*3 + upvotes)=${communityScore} >= ${COMMUNITY_ESCALATION_SCORE_THRESHOLD}.`);
+  }
+  if (trackB) {
+    reasons.push(`Track B stagnation triggered: ${status} inactive for ${Math.floor(inactivityDays)} days (threshold ${inactivityThresholdDays}).`);
+  }
+
+  const escalationLevel = getEscalationLevel({ trackA, trackB });
+  const now = new Date();
+  const mergedRemark = appendAdminRemark(complaint.adminRemarks, reasons.join(' '));
+  const updatePayload = {
+    forwardedByAdmin: true,
+    responseDelayWarningLogged: true,
+    escalationLevel,
+    adminRemarks: mergedRemark,
+  };
+
+  if (!complaint.escalatedAt) updatePayload.escalatedAt = now;
+  if (!complaint.adminDeadlineAt || complaint.adminDeadlineStatus !== 'active') {
+    // Start a full 48-hour window from escalation time.
+    const deadlineTime = Date.now() + ADMIN_DEADLINE_MS;
+    
+    updatePayload.adminDeadlineAt = new Date(deadlineTime);
+    updatePayload.adminDeadlineStatus = Date.now() >= deadlineTime ? 'missed' : 'active';
+  }
+  if (trackA && !complaint.trackAAlertedAt) updatePayload.trackAAlertedAt = now;
+  if (trackB && !complaint.trackBAlertedAt) updatePayload.trackBAlertedAt = now;
+
+  await complaint.update(updatePayload, { transaction });
+
+  return {
+    escalated: true,
+    trackA,
+    trackB,
+    communityScore,
+    inactivityDays,
+    authorityWarning: `Attention: Complaint #${complaint.id} has high community interest. Immediate action required.`,
+    userAlert: 'We hear you. This issue has been escalated to City Admin for manual intervention and department review.',
+  };
+};
+
+const getMostRecentCitizenBump = async (complaintId, citizenUid) => {
+  if (!complaintId || !citizenUid) return null;
+
+  return ComplaintBump.findOne({
+    where: { complaintId, citizenUid },
+    attributes: ['id', 'bumpedAt'],
+    order: [['bumpedAt', 'DESC']],
+  });
+};
 
 // CREATE COMPLAINT
 // CREATE COMPLAINT
@@ -103,17 +393,17 @@ exports.createComplaint = async (req, res) => {
     if (exactMatch) {
       // 3. The "Bump" Intercept
       // Check if duplicate has had NO authority activity for 3+ days
-      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
       const lastActivity = exactMatch.lastAuthorityActivityAt || exactMatch.updatedAt; // Fallback to updated if null
 
       const isInactive = new Date(lastActivity) < threeDaysAgo;
 
       await t.rollback();
 
-      if (isInactive) {
+      if (isInactive && isBumpableStatus(exactMatch.currentStatus)) {
         // Check if user has already bumped recently (e.g. within 3 days)
-        const lastBump = exactMatch.lastBumpedAt;
-        const canBump = !lastBump || new Date(lastBump) < threeDaysAgo;
+        const lastCitizenBump = await getMostRecentCitizenBump(exactMatch.id, citizenUid);
+        const canBump = !lastCitizenBump || new Date(lastCitizenBump.bumpedAt) < threeDaysAgo;
 
         if (canBump) {
           return res.status(409).json({
@@ -747,6 +1037,8 @@ exports.getAllComplaints = async (req, res) => {
       offset: parseInt(offset),
     });
 
+    await Promise.all(rows.map((row) => evaluateComplaintEscalation(row)));
+
     // Ensure image URLs are accessible: generate signed URLs where possible
     const bucketName = 'cityzen-media';
     const complaintsWithSignedImages = await Promise.all(
@@ -835,6 +1127,8 @@ exports.getComplaintsByCitizen = async (req, res) => {
       offset: parseInt(offset),
     });
 
+    await Promise.all(rows.map((row) => evaluateComplaintEscalation(row)));
+
     res.json({
       complaints: rows,
       pagination: {
@@ -908,11 +1202,16 @@ exports.getComplaintsByAuthority = async (req, res) => {
         },
       ],
       order: [
+        ['bumpCount', 'DESC'],
+        ['priorityScore', 'DESC'],
+        ['lastBumpedAt', 'DESC'],
         ['createdAt', 'DESC']
       ],
       limit: parseInt(limit),
       offset: parseInt(offset),
     });
+
+    await Promise.all(rows.map((row) => evaluateComplaintEscalation(row)));
 
     res.json({
       complaints: rows,
@@ -961,7 +1260,14 @@ exports.getComplaintById = async (req, res) => {
       return res.status(404).json({ message: 'Complaint not found.' });
     }
 
+    await evaluateComplaintEscalation(complaint);
+
     const plainComplaint = complaint.get({ plain: true });
+    plainComplaint.misconductReportDownloadUrl = getMisconductReportDownloadUrl(complaint, req);
+    plainComplaint.authorityEscalationWarning = `⚠️ URGENT: Complaint #${complaint.id} has escalated due to high community engagement. You must provide a substantive update (status change or photo evidence) within 48 hours to avoid critical failure.`;
+    plainComplaint.authorityCriticalFailureWarning = `🚨 CRITICAL FAILURE: The 48-hour deadline for Complaint #${complaint.id} has been missed. This failure has been logged in your department's performance record and a misconduct report has been generated for administrative review.`;
+    plainComplaint.userEscalationMessage = 'We hear you. Your complaint has been escalated to City Admin for immediate attention. The department has 48 hours to respond or face formal review.';
+    plainComplaint.userCriticalFailureMessage = 'We are deeply sorry for this unacceptable delay. Despite our escalation, the department failed to respond within 48 hours. We take full responsibility for this service failure. An official apology report has been generated, and this incident will be used to improve departmental accountability.';
 
     // Add hasUpvoted flag
     if (citizenUid) {
@@ -983,6 +1289,16 @@ exports.getComplaintById = async (req, res) => {
     if (assignment) {
       plainComplaint.AuthorityCompany = assignment.AuthorityCompany;
     }
+
+    // Include persistent bump history metadata for complaint details.
+    const bumpRows = await ComplaintBump.findAll({
+      where: { complaintId: id },
+      attributes: ['id', 'citizenUid', 'bumpedAt'],
+      order: [['bumpedAt', 'DESC']],
+      limit: 20,
+    });
+    plainComplaint.bumpHistory = bumpRows;
+    plainComplaint.bumpHistoryCount = await ComplaintBump.count({ where: { complaintId: id } });
 
     // Sign image URLs to ensure accessibility
     const bucketName = 'cityzen-media';
@@ -1049,7 +1365,7 @@ exports.updateComplaintStatus = async (req, res) => {
       });
     }
 
-    const complaint = await Complaint.findByPk(id);
+    const complaint = await Complaint.findByPk(id, { transaction: t });
     if (!complaint) {
       await t.rollback();
       return res.status(404).json({ message: 'Complaint not found.' });
@@ -1064,7 +1380,12 @@ exports.updateComplaintStatus = async (req, res) => {
     await complaint.update({
       currentStatus,
       statusNotes: statusNotes || complaint.statusNotes,
+      // Any status movement from authority/admin counts as fresh authority activity.
+      lastAuthorityActivityAt: new Date(),
     }, { transaction: t });
+
+    // A status transition is substantive, so clear any active 48-hour red alert.
+    await clearActiveEscalationOnSubstantiveUpdate(complaint, t);
 
     // Upload images if provided
     if (imageFiles && imageFiles.length > 0) {
@@ -1112,6 +1433,12 @@ exports.bumpComplaint = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
+    const { citizenUid } = req.body;
+
+    if (!citizenUid) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Missing citizenUid in request body.' });
+    }
 
     const complaint = await Complaint.findByPk(id);
     if (!complaint) {
@@ -1119,35 +1446,62 @@ exports.bumpComplaint = async (req, res) => {
       return res.status(404).json({ message: 'Complaint not found.' });
     }
 
-    // Check bump eligibility (3+ days since last bump)
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-    if (complaint.lastBumpedAt && new Date(complaint.lastBumpedAt) > threeDaysAgo) {
+    if (complaint.citizenUid !== citizenUid) {
+      await t.rollback();
+      return res.status(403).json({ message: 'Only the complaint owner can bump this complaint.' });
+    }
+
+    if (!isBumpableStatus(complaint.currentStatus)) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Only open complaints can be bumped.' });
+    }
+
+    const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
+    const lastAuthorityActivity = complaint.lastAuthorityActivityAt || complaint.updatedAt;
+    if (lastAuthorityActivity && new Date(lastAuthorityActivity) > threeDaysAgo) {
+      await t.rollback();
+      return res.status(400).json({ message: 'This complaint cannot be bumped yet because authority activity was recorded within the last 3 days.' });
+    }
+
+    // Enforce cooldown per citizen, not globally for the complaint.
+    const lastCitizenBump = await getMostRecentCitizenBump(complaint.id, citizenUid);
+    if (lastCitizenBump && new Date(lastCitizenBump.bumpedAt) > threeDaysAgo) {
       await t.rollback();
       return res.status(400).json({ message: 'You can only bump this complaint once every 3 days.' });
     }
 
-    // Calculate New Priority
-    const daysSinceSubmission = (Date.now() - new Date(complaint.createdAt).getTime()) / (1000 * 60 * 60 * 24);
-    // (Upvotes + Bumps) * Days
-    // We don't have a direct 'bumps' count column, but we can infer or use a simple increment strategy.
-    // Let's just boost priority score directly or assume each bump adds weight.
-    // For now, let's use: (Upvotes + 1) * Days (since we are bumping now)
-
-    // To track total bumps, we might need a count. For now let's use the formula:
-    // Priority += DaysSinceSubmission * 10 (arbitrary weight for a bump)
-
-    const boost = Math.ceil(daysSinceSubmission * 10);
-    const newPriority = (complaint.priorityScore || 0) + boost;
+    // escalation.pdf formula: Priority = (Upvotes + Bumps) * DaysSinceSubmission
+    const newBumpCount = (complaint.bumpCount || 0) + 1;
+    const newPriority = computePriorityScore({
+      upvotes: complaint.upvotes,
+      bumpCount: newBumpCount,
+      createdAt: complaint.createdAt,
+    });
+    const bumpedAt = new Date();
 
     await complaint.update({
       priorityScore: newPriority,
-      lastBumpedAt: new Date()
+      bumpCount: newBumpCount,
+      lastBumpedAt: bumpedAt
     }, { transaction: t });
+
+    await ComplaintBump.create({
+      complaintId: complaint.id,
+      citizenUid,
+      bumpedAt,
+    }, { transaction: t });
+
+    const escalationState = await evaluateComplaintEscalation(complaint, { transaction: t });
 
     await t.commit();
     res.json({
       message: 'Complaint priority bumped successfully!',
-      priorityScore: newPriority
+      priorityScore: newPriority,
+      bumpCount: newBumpCount,
+      bumpedBy: citizenUid,
+      escalated: escalationState.escalated,
+      escalationTrackA: escalationState.trackA,
+      escalationTrackB: escalationState.trackB,
     });
 
   } catch (error) {
@@ -1281,6 +1635,10 @@ exports.deleteComplaint = async (req, res) => {
         transaction: t,
       }),
       ComplaintReport.destroy({
+        where: { complaintId: id },
+        transaction: t,
+      }),
+      ComplaintBump.destroy({
         where: { complaintId: id },
         transaction: t,
       }),
@@ -1430,10 +1788,23 @@ exports.upvoteComplaint = async (req, res) => {
     // Reload to get the new count
     await complaint.reload({ transaction: t });
 
+    const recalculatedPriority = computePriorityScore({
+      upvotes: complaint.upvotes,
+      bumpCount: complaint.bumpCount,
+      createdAt: complaint.createdAt,
+    });
+    await complaint.update({ priorityScore: recalculatedPriority }, { transaction: t });
+
+    const escalationState = await evaluateComplaintEscalation(complaint, { transaction: t });
+
     await t.commit();
     res.json({
       message: 'Upvote successful',
       upvotes: complaint.upvotes,
+      priorityScore: recalculatedPriority,
+      escalated: escalationState.escalated,
+      escalationTrackA: escalationState.trackA,
+      escalationTrackB: escalationState.trackB,
     });
 
   } catch (error) {
@@ -1850,6 +2221,38 @@ exports.addEvidenceToComplaint = async (req, res) => {
     res.status(500).json({
       message: `Failed to add evidence: ${error.message}`,
     });
+  }
+};
+
+// DOWNLOAD MISCONDUCT REPORT PDF
+exports.downloadMisconductReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const complaint = await Complaint.findByPk(id);
+
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found.' });
+    }
+
+    // Try to generate report if complaint has crossed into critical failure and no report exists yet.
+    if (!complaint.misconductReportPath) {
+      await evaluateComplaintEscalation(complaint);
+      await complaint.reload();
+    }
+
+    if (!complaint.misconductReportPath) {
+      return res.status(404).json({ message: 'No misconduct report available for this complaint yet.' });
+    }
+
+    const reportAbsPath = nodePath.join(REPORTS_DIR, complaint.misconductReportPath);
+    if (!fs.existsSync(reportAbsPath)) {
+      return res.status(404).json({ message: 'Misconduct report file is missing on server.' });
+    }
+
+    return res.download(reportAbsPath, complaint.misconductReportPath);
+  } catch (error) {
+    console.error('Download Misconduct Report Error:', error.message);
+    return res.status(500).json({ message: 'Server error while downloading misconduct report.' });
   }
 };
 

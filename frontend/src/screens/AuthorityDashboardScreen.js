@@ -51,6 +51,7 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
 
   const [loading, setLoading] = useState(true);
   const [complaints, setComplaints] = useState([]);
+  const [nowTs, setNowTs] = useState(Date.now());
 
   // Filter states
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -60,6 +61,11 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
   const [timeFilter, setTimeFilter] = useState('all'); // all, weekly, monthly, yearly
   const [categories, setCategories] = useState([]);
   const [activeFilterCount, setActiveFilterCount] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const extractAuthorityCompanyId = (userData) => {
     if (!userData || typeof userData !== 'object') return null;
@@ -118,11 +124,13 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
               'in_progress': 'In Progress',
               'resolved': 'Resolved',
               'rejected': 'Rejected',
-              'completed': 'Completed'
+              'completed': 'Completed',
+              'critical_failure': 'Critical Failure'
             };
             return {
               id: c.id,
               title: c.title,
+              currentStatus: c.currentStatus,
               location: `Lat: ${c.latitude}, Long: ${c.longitude}`,
               latitude: c.latitude,
               longitude: c.longitude,
@@ -130,7 +138,14 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
               status: statusMap[c.currentStatus] || c.currentStatus.charAt(0).toUpperCase() + c.currentStatus.slice(1),
               time: new Date(c.createdAt).toLocaleDateString(),
               createdAt: c.createdAt, // Keep raw date for filtering
+              updatedAt: c.updatedAt,
+              lastAuthorityActivityAt: c.lastAuthorityActivityAt || null,
               upvotes: c.upvotes || 0,
+              bumpCount: c.bumpCount || 0,
+              lastBumpedAt: c.lastBumpedAt || null,
+              responseDelayWarningLogged: c.responseDelayWarningLogged || c.forwardedByAdmin || false,
+              adminDeadlineAt: c.adminDeadlineAt || null,
+              adminDeadlineStatus: c.adminDeadlineStatus || 'none',
               category: c.Category ? c.Category.name : 'Uncategorized',
               description: c.description,
               citizenProof: c.images && c.images.length > 0 ? c.images[0].imageURL : 'https://via.placeholder.com/400'
@@ -227,6 +242,55 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
   const openGoogleMaps = (latitude, longitude) => {
     const url = `https://www.google.com/maps/search/${latitude},${longitude}`;
     Linking.openURL(url).catch(err => console.log('Could not open Google Maps', err));
+  };
+
+  const getDeadlineInfo = (item) => {
+    const hasServerActiveDeadline = item?.adminDeadlineStatus === 'active' && item?.adminDeadlineAt;
+    let deadlineMs = null;
+    let showMissed = item?.adminDeadlineStatus === 'missed';
+
+    if (hasServerActiveDeadline) {
+      deadlineMs = new Date(item.adminDeadlineAt).getTime();
+    } else {
+      const thresholdByStatus = { pending: 7, accepted: 10, in_progress: 14 };
+      const statusKey = String(item?.currentStatus || '').toLowerCase().replace(/\s+/g, '_');
+      const thresholdDays = thresholdByStatus[statusKey];
+
+      if (!thresholdDays) {
+        return { showActive: false, showMissed: false, label: null };
+      }
+
+      const lastActivity = item?.lastAuthorityActivityAt || item?.updatedAt || item?.createdAt;
+      const lastActivityMs = lastActivity ? new Date(lastActivity).getTime() : NaN;
+      if (!Number.isFinite(lastActivityMs)) {
+        return { showActive: false, showMissed: false, label: null };
+      }
+
+      const staleTriggerMs = lastActivityMs + thresholdDays * 24 * 60 * 60 * 1000;
+      if (nowTs < staleTriggerMs) {
+        return { showActive: false, showMissed: false, label: null };
+      }
+
+      deadlineMs = nowTs + 48 * 60 * 60 * 1000;
+      if (nowTs >= deadlineMs) {
+        showMissed = true;
+      }
+    }
+
+    if (showMissed) {
+      return { showActive: false, showMissed: true, label: null };
+    }
+
+    const remainingMs = Math.max(0, deadlineMs - nowTs);
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+    const remainingSeconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+
+    return {
+      showActive: true,
+      showMissed: false,
+      label: `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`,
+    };
   };
 
 
@@ -406,7 +470,39 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
             renderItem={({ item }) => (
               <View style={[styles.workCard, darkMode && styles.cardDark]}>
                 <TouchableOpacity onPress={() => navigation.navigate('AuthorityComplaintDetail', { id: item.id, initialData: item })}>
-                  <Text style={[styles.workTitle, darkMode && styles.textWhite]} numberOfLines={1}>{item.title}</Text>
+                  {(() => {
+                    const deadlineInfo = getDeadlineInfo(item);
+                    return (
+                      <>
+                        {deadlineInfo.showActive && (
+                          <View style={styles.deadlineChip}>
+                            <Clock size={12} color="#7F1D1D" />
+                            <Text style={styles.deadlineChipLabel}>48H LEFT</Text>
+                            <Text style={styles.deadlineChipTime}>{deadlineInfo.label}</Text>
+                          </View>
+                        )}
+                        {deadlineInfo.showMissed && (
+                          <View style={[styles.deadlineChip, styles.deadlineChipMissed]}>
+                            <AlertCircle size={12} color="#FFFFFF" />
+                            <Text style={styles.deadlineChipMissedText}>DEADLINE MISSED</Text>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
+                  <View style={styles.workTitleRow}>
+                    <Text style={[styles.workTitle, darkMode && styles.textWhite]} numberOfLines={1}>{item.title}</Text>
+                    {item.bumpCount > 0 && (
+                      <View style={styles.bumpBadge}>
+                        <Text style={styles.bumpBadgeText}>BUMPED {item.bumpCount}x</Text>
+                      </View>
+                    )}
+                    {item.responseDelayWarningLogged && (
+                      <View style={styles.delayBadge}>
+                        <Text style={styles.delayBadgeText}>RESPONSE DELAY WARNING</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.workLoc}>{item.location} • {item.ward}</Text>
                 </TouchableOpacity>
                 <View style={styles.cardDivider} />
@@ -525,6 +621,7 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
               }
             };
             const colors = getStatusColor(item.status);
+            const deadlineInfo = getDeadlineInfo(item);
 
             return (
               <TouchableOpacity
@@ -536,10 +633,35 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
                 onPress={() => navigation.navigate('AuthorityComplaintDetail', { id: item.id, initialData: item })}
               >
                 <View style={{ flex: 1 }}>
+                  {deadlineInfo.showActive && (
+                    <View style={[styles.deadlineChip, { marginBottom: 8 }]}> 
+                      <Clock size={12} color="#7F1D1D" />
+                      <Text style={styles.deadlineChipLabel}>48H LEFT</Text>
+                      <Text style={styles.deadlineChipTime}>{deadlineInfo.label}</Text>
+                    </View>
+                  )}
+                  {deadlineInfo.showMissed && (
+                    <View style={[styles.deadlineChip, styles.deadlineChipMissed, { marginBottom: 8 }]}> 
+                      <AlertCircle size={12} color="#FFFFFF" />
+                      <Text style={styles.deadlineChipMissedText}>DEADLINE MISSED</Text>
+                    </View>
+                  )}
                   <View style={styles.rowTop}>
                     <Text style={[styles.ledgerTitle, darkMode && styles.textWhite, { flex: 1, marginRight: 10 }]} numberOfLines={1}>{item.title}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
-                      <Text style={[styles.statusBadgeText, { color: colors.text }]}>{item.status}</Text>
+                    <View style={styles.rowTopBadges}>
+                      {item.bumpCount > 0 && (
+                        <View style={styles.bumpBadge}>
+                          <Text style={styles.bumpBadgeText}>BUMPED {item.bumpCount}x</Text>
+                        </View>
+                      )}
+                      {item.responseDelayWarningLogged && (
+                        <View style={styles.delayBadge}>
+                          <Text style={styles.delayBadgeText}>RESPONSE DELAY WARNING</Text>
+                        </View>
+                      )}
+                      <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
+                        <Text style={[styles.statusBadgeText, { color: colors.text }]}>{item.status}</Text>
+                      </View>
                     </View>
                   </View>
                   <View style={styles.rowBottom}>
@@ -834,6 +956,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, marginLeft: 10 },
   ledgerRow: { backgroundColor: 'white', padding: 16, borderRadius: 15, marginBottom: 10 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rowTopBadges: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ledgerTitle: { fontSize: 14, fontWeight: 'bold' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   statusBadgeText: { fontSize: 10, fontWeight: 'bold' },
@@ -849,8 +972,64 @@ const styles = StyleSheet.create({
   toggleText: { fontWeight: 'bold', color: '#6B7280', fontSize: 12 },
   toggleTextActive: { color: '#1E88E5' },
   workCard: { backgroundColor: 'white', padding: 16, borderRadius: 15, marginBottom: 10 },
+  workTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   workTitle: { fontWeight: 'bold', fontSize: 15 },
   workLoc: { fontSize: 12, color: '#6B7280', marginTop: 4 },
+  bumpBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start'
+  },
+  bumpBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E'
+  },
+  delayBadge: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start'
+  },
+  delayBadgeText: { fontSize: 9, fontWeight: '800', color: '#991B1B' },
+  deadlineChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5'
+  },
+  deadlineChipLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#991B1B'
+  },
+  deadlineChipTime: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#7F1D1D'
+  },
+  deadlineChipMissed: {
+    backgroundColor: '#7F1D1D',
+    borderColor: '#B91C1C'
+  },
+  deadlineChipMissedText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF'
+  },
   cardDivider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 12 },
   actionRow: { flexDirection: 'row', justifyContent: 'space-between' },
   btn: { flex: 1, height: 38, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginHorizontal: 4 },

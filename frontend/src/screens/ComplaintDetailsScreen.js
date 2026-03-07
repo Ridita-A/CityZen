@@ -242,10 +242,12 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       if (!complaint || complaint.currentStatus !== 'critical_failure') return;
       const key = `criticalFailureSeen:${complaint.id}`;
       const seen = await AsyncStorage.getItem(key);
-      if (!seen) {
-        setCriticalFailureModalVisible(true);
-        await AsyncStorage.setItem(key, '1');
-      }
+      // Always show for testing - comment out this check to show modal only once
+      setCriticalFailureModalVisible(true);
+      // if (!seen) {
+      //   setCriticalFailureModalVisible(true);
+      //   await AsyncStorage.setItem(key, '1');
+      // }
     };
 
     maybeShowCriticalFailureModal();

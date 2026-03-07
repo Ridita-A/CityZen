@@ -10,6 +10,7 @@ import { saveOfflineReport, deleteReport, initStorage } from '../utils/offlineSt
 
 export default function CameraScreen({ navigation }) {
     const {
+        images,
         setImages,
         setLocation,
         setLocationTime,
@@ -149,23 +150,18 @@ export default function CameraScreen({ navigation }) {
         setCapturedLocation(null);
     };
 
-    const handleProceed = async () => {
-        if (!isConnected) {
-            Alert.alert("Offline", "You need internet to proceed with the submission flow.");
-            return;
-        }
-
-        if (previewUri && capturedLocation) {
+    const saveCurrentToContext = async (uri, loc) => {
+        if (images.length === 0) {
             let locationData = {
-                latitude: capturedLocation.coords.latitude,
-                longitude: capturedLocation.coords.longitude,
-                fullAddress: `${capturedLocation.coords.latitude.toFixed(6)}, ${capturedLocation.coords.longitude.toFixed(6)}`
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+                fullAddress: `${loc.coords.latitude.toFixed(6)}, ${loc.coords.longitude.toFixed(6)}`
             };
 
             try {
                 const [addr] = await Location.reverseGeocodeAsync({ 
-                    latitude: capturedLocation.coords.latitude, 
-                    longitude: capturedLocation.coords.longitude 
+                    latitude: loc.coords.latitude, 
+                    longitude: loc.coords.longitude 
                 });
                 if (addr) {
                     const areaName = addr.name || addr.street || addr.subregion || addr.city || 'Unknown area';
@@ -179,10 +175,31 @@ export default function CameraScreen({ navigation }) {
             } catch (err) {
                 console.warn('Reverse geocode failed', err);
             }
-
-            setImages([previewUri]);
             setLocation(locationData);
-            setLocationTime(new Date(capturedLocation.timestamp).toLocaleString());
+            setLocationTime(new Date(loc.timestamp).toLocaleString());
+        }
+        setImages(prev => [...prev, uri]);
+    };
+
+    const handleAddMore = async () => {
+        if (previewUri && capturedLocation) {
+            await saveCurrentToContext(previewUri, capturedLocation);
+            setPreviewUri(null);
+            setCapturedLocation(null);
+            setCurrentReportId(null);
+        }
+    };
+
+    const handleProceed = async () => {
+        if (!isConnected) {
+            Alert.alert("Offline", "You need internet to proceed with the submission flow.");
+            return;
+        }
+
+        if (previewUri && capturedLocation) {
+            await saveCurrentToContext(previewUri, capturedLocation);
+            navigation.navigate('SubmitComplaintDetails');
+        } else if (images.length > 0) {
             navigation.navigate('SubmitComplaintDetails');
         }
     };
@@ -228,6 +245,11 @@ export default function CameraScreen({ navigation }) {
                                 <Text style={styles.loadingText}>Capturing GPS & Image...</Text>
                             </View>
                         )}
+                        {images.length > 0 && !isCapturing && (
+                            <View style={styles.badgeContainer}>
+                                <Text style={styles.badgeText}>{images.length} Captured</Text>
+                            </View>
+                        )}
                     </CameraView>
                 ) : (
                     <View style={styles.previewContainer}>
@@ -262,7 +284,7 @@ export default function CameraScreen({ navigation }) {
                                 style={styles.sideButton}
                             >
                                 <GalleryIcon size={30} color="white" />
-                                <Text style={styles.sideButtonText}>Offline Reports</Text>
+                                <Text style={styles.sideButtonText}>Offline Gallery</Text>
                             </TouchableOpacity>
                         </View>
                     </>
@@ -273,7 +295,10 @@ export default function CameraScreen({ navigation }) {
                             <Text style={styles.sideButtonText}>Retake</Text>
                         </TouchableOpacity>
                         
-                        <View style={{ width: 80 }} />
+                        <TouchableOpacity onPress={handleAddMore} style={styles.actionButton}>
+                            <Camera size={30} color="white" />
+                            <Text style={styles.sideButtonText}>Add More</Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity onPress={handleProceed} style={styles.actionButton}>
                             <ArrowRight size={30} color="white" />
@@ -399,5 +424,19 @@ const styles = StyleSheet.create({
     },
     disabledButton: {
         opacity: 0.5,
+    },
+    badgeContainer: {
+        position: 'absolute',
+        top: 20,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    badgeText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 12,
     }
 });

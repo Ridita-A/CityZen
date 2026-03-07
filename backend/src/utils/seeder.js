@@ -99,7 +99,7 @@ async function seedDatabase() {
 
         // Seed authority company areas into database
         const authorityAreasToSeed = [
-            { companyName: 'DNCC (Dhaka North City Corporation)', name: 'Dhaka North', latitude: 23.796780, longitude: 90.408002, radius: 5.80 }, 
+            { companyName: 'DNCC (Dhaka North City Corporation)', name: 'Dhaka North', latitude: 23.796780, longitude: 90.408002, radius: 9.00 }, 
             { companyName: 'DSCC (Dhaka South City Corporation)',  name: 'Dhaka South', latitude: 23.724371, longitude: 90.409020, radius: 3.75 }, 
             { companyName: 'DESCO (Dhaka Electric Supply Company)', name: 'Gulshan', latitude: 23.792094, longitude: 90.412353, radius: 2.5 },         
             { companyName: 'DESCO (Dhaka Electric Supply Company)', name: 'Mirpur', latitude: 23.815226, longitude: 90.363270, radius: 4.65 },         

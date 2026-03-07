@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,45 @@ export default function EmailOtpScreen({ route, navigation }) {
   const { refreshUser } = useNotification();
   const { purpose, challengeId, email, firebaseUid, signupPayload } = route.params || {};
 
-  const [otp, setOtp] = useState('');
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
+  const inputRefs = useRef([]);
+  const otp = otpDigits.join('');
+
+  const handleOtpChange = (text, index) => {
+    // Only allow digits
+    const digit = text.replace(/[^0-9]/g, '').slice(-1);
+    
+    const newOtpDigits = [...otpDigits];
+    newOtpDigits[index] = digit;
+    setOtpDigits(newOtpDigits);
+
+    // Auto-focus next input if digit entered
+    if (digit && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyPress = (e, index) => {
+    // Handle backspace - move to previous input if current is empty
+    if (e.nativeEvent.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handlePaste = (text) => {
+    // Handle pasted OTP
+    const digits = text.replace(/[^0-9]/g, '').slice(0, 6).split('');
+    if (digits.length > 0) {
+      const newOtpDigits = [...otpDigits];
+      digits.forEach((digit, i) => {
+        newOtpDigits[i] = digit;
+      });
+      setOtpDigits(newOtpDigits);
+      // Focus last filled input or last input
+      const lastIndex = Math.min(digits.length, 5);
+      inputRefs.current[lastIndex]?.focus();
+    }
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState('');
@@ -160,14 +198,24 @@ export default function EmailOtpScreen({ route, navigation }) {
         <Text style={styles.title}>Enter OTP</Text>
         <Text style={styles.subtitle}>An email has been sent to {email || 'your email'}.</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Enter 6-digit OTP"
-          keyboardType="number-pad"
-          maxLength={6}
-          value={otp}
-          onChangeText={setOtp}
-        />
+        <View style={styles.otpContainer}>
+          {otpDigits.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => (inputRefs.current[index] = ref)}
+              style={[
+                styles.otpBox,
+                digit ? styles.otpBoxFilled : null
+              ]}
+              keyboardType="number-pad"
+              maxLength={1}
+              value={digit}
+              onChangeText={(text) => handleOtpChange(text, index)}
+              onKeyPress={(e) => handleKeyPress(e, index)}
+              selectTextOnFocus
+            />
+          ))}
+        </View>
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}
 
@@ -239,16 +287,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    height: 52,
-    paddingHorizontal: 16,
-    fontSize: 18,
-    textAlign: 'center',
-    letterSpacing: 6,
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
     marginBottom: 10,
+  },
+  otpBox: {
+    width: 42,
+    height: 48,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+  otpBoxFilled: {
+    borderColor: '#1E88E5',
+    backgroundColor: '#EFF6FF',
   },
   errorText: {
     color: '#B91C1C',

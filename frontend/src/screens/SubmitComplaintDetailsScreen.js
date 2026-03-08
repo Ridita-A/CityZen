@@ -6,7 +6,7 @@ import { useComplaint } from '../context/ComplaintContext';
 import { complaintAPI } from '../services/api';
 import { getOfflineReports } from '../utils/offlineStorage';
 
-import { Camera, Image as ImageIcon, Sparkles, MapPin, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, Shield, X } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Sparkles, MapPin, Trash2, ChevronDown, ChevronUp, RefreshCw, Clock, CheckCircle, X } from 'lucide-react-native';
 import * as ImagePicker from "expo-image-picker";
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
@@ -44,8 +44,6 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
         setLocationTime,
         selectedCategory,
         setSelectedCategory,
-        privacyEnabled,
-        setPrivacyEnabled,
         aiResult,
         setAiResult,
         setTitle,
@@ -832,12 +830,6 @@ export default function SubmitComplaintDetailsScreen({ navigation, onLogout, dar
                         </View>
                     )}
 
-                    <TouchableOpacity onPress={() => setPrivacyEnabled(!privacyEnabled)} style={styles.privacyRow}>
-                        <View style={[styles.checkbox, privacyEnabled && styles.checkboxActive]}>{privacyEnabled && <CheckCircle size={14} color="white" />}</View>
-                        <Text style={[styles.privacyText, darkMode && styles.textGray]}>Blur faces or license plates (Privacy)</Text>
-                        <Shield size={16} color="#6B7280" style={{ marginLeft: 'auto' }} />
-                    </TouchableOpacity>
-
                     <Text style={[styles.label, darkMode && styles.textWhite]}>Category <Text style={styles.req}>*</Text></Text>
                     <TouchableOpacity
                         onPress={() => !isDraftMode && setIsDropdownOpen(!isDropdownOpen)}
@@ -1065,11 +1057,6 @@ const styles = StyleSheet.create({
     readOnlyValue: { fontSize: 15, fontWeight: '600', color: '#1F2937', marginLeft: 22 },
     refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     refreshText: { color: '#1E88E5', fontSize: 12, fontWeight: 'bold' },
-
-    privacyRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 8 },
-    checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-    checkboxActive: { backgroundColor: '#1E88E5', borderColor: '#1E88E5' },
-    privacyText: { fontSize: 14, color: '#374151' },
 
     submitBtn: { backgroundColor: '#1E88E5', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
     btnDisabled: { backgroundColor: '#93C5FD' },

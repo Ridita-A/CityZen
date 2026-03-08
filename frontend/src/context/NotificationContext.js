@@ -1329,25 +1329,6 @@ export const NotificationProvider = ({ children }) => {
         }
     };
 
-    // Test function to manually trigger admin notification
-    const testAdminNotification = () => {
-        console.log('TEST: Manually triggering admin notification');
-        const testNotif = {
-            uniqId: Date.now().toString(),
-            type: 'report',
-            title: 'Test Notification',
-            message: 'This is a test notification to verify the system works',
-            icon: Flag,
-            color: '#EF4444',
-            timestamp: new Date().toISOString(),
-            read: false,
-            complaintId: 1, // Test complaint ID
-            count: 1
-        };
-        showAdminNotification(testNotif);
-        addToAdminHistory(testNotif);
-    };
-
     const testAuthorityNotification = () => {
         console.log('TEST: Manually triggering authority notification');
         const testNotif = {
@@ -1479,7 +1460,6 @@ export const NotificationProvider = ({ children }) => {
                 markAdminAsUnread,
                 markAllAdminAsRead,
                 deleteAdminNotification,
-                testAdminNotification,
                 isAdmin
             }}>
                 <AuthorityNotificationContext.Provider value={{

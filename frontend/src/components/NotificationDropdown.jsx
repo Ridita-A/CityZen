@@ -195,7 +195,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
           {unreadNotifications.map((notif) => (
             <TouchableOpacity
               key={notif.uniqId}
-              style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark]}
+              style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark, darkMode && styles.unreadItemDark]}
               onPress={() => handleNotificationClick(notif)}
             >
               <View style={[styles.indicator, { backgroundColor: getStatusColor(notif) }]} />
@@ -214,7 +214,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                 </Text>
               </View>
               <TouchableOpacity
-                style={styles.deleteBtn}
+                style={[styles.deleteBtn, darkMode && styles.deleteBtnDark]}
                 onPress={(e) => {
                   e.stopPropagation();
                   deleteNotification(notif.uniqId);
@@ -250,7 +250,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                     {notif.title}
                   </Text>
                 </View>
-                <Text style={[styles.notifMessage, styles.readMessage]} numberOfLines={2}>
+                <Text style={[styles.notifMessage, styles.readMessage, darkMode && styles.textGray]} numberOfLines={2}>
                   {notif.message}
                 </Text>
                 <Text style={styles.notifTime}>
@@ -259,7 +259,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
               </TouchableOpacity>
               <View style={styles.notifActions}>
                 <TouchableOpacity
-                  style={styles.actionBtn}
+                  style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                   onPress={(e) => {
                     e.stopPropagation();
                     markAsUnread(notif.uniqId);
@@ -268,7 +268,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                   <Bell size={16} color="#1E88E5" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.actionBtn}
+                  style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                   onPress={(e) => {
                     e.stopPropagation();
                     deleteNotification(notif.uniqId);
@@ -285,7 +285,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
       {/* Empty State */}
       {unreadNotifications.length === 0 && readNotifications.length === 0 && (
         <View style={styles.emptyState}>
-          <Bell size={48} color="#D1D5DB" />
+          <Bell size={48} color={darkMode ? '#4B5563' : '#D1D5DB'} />
           <Text style={[styles.emptyText, darkMode && styles.textGray]}>
             No notifications yet
           </Text>
@@ -309,7 +309,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
             {unreadAuthority.map((notif) => (
               <TouchableOpacity
                 key={notif.uniqId}
-                style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark]}
+                style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark, darkMode && styles.unreadItemDark]}
                 onPress={() => handleAuthorityNotificationClick(notif)}
               >
                 <View style={[styles.indicator, { backgroundColor: '#1E88E5' }]} />
@@ -328,7 +328,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.deleteBtn}
+                  style={[styles.deleteBtn, darkMode && styles.deleteBtnDark]}
                   onPress={(e) => {
                     e.stopPropagation();
                     deleteAuthorityNotification(notif.uniqId);
@@ -369,7 +369,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                 </TouchableOpacity>
                 <View style={styles.notifActions}>
                   <TouchableOpacity
-                    style={styles.actionBtn}
+                    style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                     onPress={(e) => {
                       e.stopPropagation();
                       handleMarkAuthorityAsUnread(notif.uniqId);
@@ -378,7 +378,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                     <Bell size={16} color="#1E88E5" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.actionBtn}
+                    style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                     onPress={(e) => {
                       e.stopPropagation();
                       deleteAuthorityNotification(notif.uniqId);
@@ -395,7 +395,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
         {/* Empty state */}
         {authorityHistory.length === 0 && (
           <View style={styles.emptyState}>
-            <Bell size={48} color="#D1D5DB" />
+            <Bell size={48} color={darkMode ? '#4B5563' : '#D1D5DB'} />
             <Text style={[styles.emptyText, darkMode && styles.textGray]}>
               No notifications yet
             </Text>
@@ -416,7 +416,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
           {unreadAdminNotifications.map((notif) => (
             <TouchableOpacity
               key={notif.uniqId}
-              style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark]}
+              style={[styles.notifItem, styles.unreadItem, darkMode && styles.notifItemDark, darkMode && styles.unreadItemDark]}
               onPress={() => handleAdminNotificationClick(notif)}
             >
               <View style={[styles.indicator, { backgroundColor: notif.color }]} />
@@ -435,7 +435,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                 </Text>
               </View>
               <TouchableOpacity
-                style={styles.deleteBtn}
+                style={[styles.deleteBtn, darkMode && styles.deleteBtnDark]}
                 onPress={(e) => {
                   e.stopPropagation();
                   deleteAdminNotification(notif.uniqId);
@@ -475,7 +475,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
               </TouchableOpacity>
               <View style={styles.notifActions}>
                 <TouchableOpacity
-                  style={styles.actionBtn}
+                  style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                   onPress={(e) => {
                     e.stopPropagation();
                     markAdminAsUnread(notif.uniqId);
@@ -484,7 +484,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
                   <Bell size={16} color="#1E88E5" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.actionBtn}
+                  style={[styles.actionBtn, darkMode && styles.actionBtnDark]}
                   onPress={(e) => {
                     e.stopPropagation();
                     deleteAdminNotification(notif.uniqId);
@@ -535,7 +535,7 @@ export default function NotificationDropdown({ visible, onClose, darkMode, navig
       {/* Dropdown */}
       <View style={[styles.dropdown, darkMode && styles.dropdownDark, userRole === 'citizen' && styles.dropdownWide]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, darkMode && styles.headerDark]}>
           <Text style={[styles.headerText, darkMode && styles.textWhite]}>{getHeaderTitle()}</Text>
           <View style={styles.headerActions}>
             {userRole === 'citizen' && unreadNotifications.length > 0 && (
@@ -622,6 +622,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  headerDark: {
+    borderBottomColor: '#374151',
+  },
   headerText: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -678,6 +681,9 @@ const styles = StyleSheet.create({
   },
   notifItemDark: {
     borderBottomColor: '#374151',
+  },
+  unreadItemDark: {
+    backgroundColor: '#1E3A5F',
   },
   indicator: {
     width: 8,
@@ -795,6 +801,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  deleteBtnDark: {
+    backgroundColor: '#4C1D1D',
+  },
   notifActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -807,5 +816,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionBtnDark: {
+    backgroundColor: '#374151',
   },
 });

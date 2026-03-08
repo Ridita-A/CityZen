@@ -716,7 +716,7 @@ export default function AuthorityDashboardScreen({ navigation, onLogout, darkMod
         {activeTab === 'work' && renderWorkQueue()}
         {activeTab === 'analytics' && (
           <View style={{ flex: 1 }}>
-            <AuthorityAnalyticsScreen />
+            <AuthorityAnalyticsScreen darkMode={darkMode} />
           </View>
         )}
         {activeTab === 'profile' && (

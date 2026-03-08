@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
-import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus, ShieldCheck, ShieldAlert } from 'lucide-react-native';
+import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react-native';
 
 import api from '../services/api';
 
@@ -32,6 +32,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
   const [appealImages, setAppealImages] = useState([]);
   const [appealSubmitting, setAppealSubmitting] = useState(false);
   const [criticalFailureModalVisible, setCriticalFailureModalVisible] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // Double-tap for upvote
   const [lastImageTap, setLastImageTap] = useState(0);
@@ -73,11 +74,22 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     resolved: 3,
     closed: 3,
     rejected: 0,
-    appealed: 2,
+    appealed: 0,
     completed: 3,
     critical_failure: 2,
   };
   const currentStep = statusToStepIndex[(complaint?.currentStatus || 'pending')] ?? 0;
+  const hasComplaintData = complaint !== null;
+
+  const applyUpvoteResult = useCallback((responseData) => {
+    if (!responseData || responseData.upvotes === undefined) return;
+    setComplaint(prev => (
+      prev
+        ? { ...prev, upvotes: responseData.upvotes, hasUpvoted: Boolean(responseData.hasUpvoted) }
+        : prev
+    ));
+    setUpvotes(responseData.upvotes);
+  }, []);
 
   const handleUpvote = async () => {
     try {
@@ -87,17 +99,10 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       }
 
       const res = await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
-      if (res.data && res.data.upvotes !== undefined) {
-        setComplaint(prev => ({ ...prev, upvotes: res.data.upvotes, hasUpvoted: true }));
-        setUpvotes(res.data.upvotes);
-      }
+      applyUpvoteResult(res.data);
     } catch (e) {
-      if (e.response && e.response.status === 400) {
-        Alert.alert('Info', 'You have already upvoted this complaint.');
-      } else {
-        console.error('Upvote failed', e);
-        Alert.alert('Error', 'Failed to upvote.');
-      }
+      console.error('Upvote toggle failed', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to update upvote.');
     }
   };
 
@@ -137,6 +142,9 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       if (appealSubmitting) return;
       if (!appealReason) return Alert.alert('Error', 'Please provide a reason for appeal.');
       if (!userData || !userData.firebaseUid) return Alert.alert('Error', 'Please login to appeal');
+      if (!canAppealComplaint()) {
+        return Alert.alert('Not allowed', 'This complaint was finally rejected by admin and can no longer be appealed. You may delete it instead.');
+      }
 
       setAppealSubmitting(true);
       const formData = new FormData();
@@ -155,11 +163,15 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       });
 
       setAppealVisible(false);
-      setComplaint(prev => ({ ...prev, currentStatus: 'appealed' }));
+      setComplaint(prev => (
+        prev
+          ? { ...prev, currentStatus: 'appealed', appealStatus: 'pending', appealReason }
+          : prev
+      ));
       Alert.alert('Success', 'Appeal submitted successfully.');
     } catch (e) {
       console.error('Appeal failed', e);
-      Alert.alert('Error', 'Failed to submit appeal.');
+      Alert.alert('Error', e.response?.data?.message || 'Failed to submit appeal.');
     } finally {
       setAppealSubmitting(false);
     }
@@ -215,9 +227,10 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       setError(null);
       // We don't set loading(true) here to avoid flickering on every focus
       // Only set it if we don't have complaint data yet
-      if (!complaint) setLoading(true);
+      if (!hasComplaintData) setLoading(true);
 
       const response = await api.get(`/complaints/${complaintIdToFetch}`, {
+        params: userData?.firebaseUid ? { citizenUid: userData.firebaseUid } : undefined,
         timeout: 10000,
       });
       setComplaint(response.data);
@@ -225,7 +238,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       setRating(response.data.rating || 0);
     } catch (err) {
       console.error('Error fetching complaint:', err);
-      if (!complaint) {
+      if (!hasComplaintData) {
         let message = 'Failed to load complaint details';
         if (err.code === 'ECONNABORTED') message = 'Network timeout. Please check your connection.';
         else if (err.message === 'Network Error') message = 'Network error. Please check your connection.';
@@ -235,7 +248,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     } finally {
       setLoading(false);
     }
-  }, [complaintIdToFetch]);
+  }, [complaintIdToFetch, hasComplaintData, userData?.firebaseUid]);
 
   useEffect(() => {
     const maybeShowCriticalFailureModal = async () => {
@@ -273,6 +286,87 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       console.error('Bump failed', e);
       Alert.alert('Error', e.response?.data?.message || 'Failed to bump complaint.');
     }
+  };
+
+  const getCurrentUserUid = () => {
+    if (!userData) return null;
+    return userData.firebaseUid || userData.uid || userData.id || null;
+  };
+
+  const isComplaintOwner = () => {
+    const currentUserUid = getCurrentUserUid();
+    if (!complaint || !currentUserUid) return false;
+    return String(complaint.citizenUid) === String(currentUserUid);
+  };
+
+  const canDeleteComplaint = () => {
+    if (!isComplaintOwner()) return false;
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    return ['pending', 'rejected'].includes(status);
+  };
+
+  const isFinalAdminRejectedAppeal = () => {
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    const appealStatus = String(complaint?.appealStatus || '').toLowerCase();
+    return status === 'rejected' && appealStatus === 'rejected';
+  };
+
+  const canAppealComplaint = () => {
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    if (!['resolved', 'rejected'].includes(status)) return false;
+    if (isFinalAdminRejectedAppeal()) return false;
+    return true;
+  };
+
+  const handleDeleteComplaint = () => {
+    const currentUserUid = getCurrentUserUid();
+    if (!currentUserUid) {
+      Alert.alert('Error', 'Please login to delete your complaint.');
+      return;
+    }
+
+    if (!canDeleteComplaint()) {
+      Alert.alert('Not allowed', 'Only your pending or rejected complaints can be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Complaint',
+      'Delete this complaint permanently? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeleteSubmitting(true);
+              await api.delete(`/complaints/${complaintIdToFetch}`, {
+                data: { citizenUid: currentUserUid },
+              });
+
+              Alert.alert('Deleted', 'Complaint deleted successfully.', [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else {
+                      navigation.navigate('HomeScreen');
+                    }
+                  },
+                },
+              ]);
+            } catch (e) {
+              console.error('Delete complaint failed', e);
+              Alert.alert('Error', e.response?.data?.message || 'Failed to delete complaint.');
+            } finally {
+              setDeleteSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Helper to check bump eligibility
@@ -313,17 +407,18 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
           Alert.alert('Error', 'Please login to upvote');
           return;
         }
-        await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
-        // Show heart animation
-        Animated.sequence([
-          Animated.spring(heartAnimScale, { toValue: 1, useNativeDriver: true, friction: 3 }),
-          Animated.delay(400),
-          Animated.timing(heartAnimScale, { toValue: 0, duration: 200, useNativeDriver: true })
-        ]).start();
-        // Refresh complaint to update upvote count
-        fetchComplaintData();
+        const res = await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
+        applyUpvoteResult(res.data);
+
+        if (res.data?.hasUpvoted) {
+          Animated.sequence([
+            Animated.spring(heartAnimScale, { toValue: 1, useNativeDriver: true, friction: 3 }),
+            Animated.delay(400),
+            Animated.timing(heartAnimScale, { toValue: 0, duration: 200, useNativeDriver: true })
+          ]).start();
+        }
       } catch (e) {
-        console.error('Upvote failed', e);
+        console.error('Upvote toggle failed', e);
       }
     }
     setLastImageTap(now);
@@ -422,10 +517,23 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
               </TouchableOpacity>
             )}
 
+            {canDeleteComplaint() && (
+              <TouchableOpacity
+                style={[styles.deleteComplaintButton, deleteSubmitting && styles.deleteComplaintButtonDisabled]}
+                onPress={handleDeleteComplaint}
+                disabled={deleteSubmitting}
+              >
+                <Trash2 size={16} color="white" />
+                <Text style={styles.deleteComplaintText}>
+                  {deleteSubmitting ? 'Deleting...' : 'Delete Complaint'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.actionButton} onPress={handleUpvote}>
-                <Heart size={16} color={upvotes > 0 ? "#EF4444" : "#6B7280"} fill={complaint?.hasUpvoted ? "#EF4444" : "none"} />
-                <Text style={[styles.actionText, { marginLeft: 4, color: upvotes > 0 ? "#EF4444" : "#6B7280" }]}>
+                <Heart size={16} color={complaint?.hasUpvoted ? "#EF4444" : "#6B7280"} fill={complaint?.hasUpvoted ? "#EF4444" : "none"} />
+                <Text style={[styles.actionText, { marginLeft: 4, color: complaint?.hasUpvoted ? "#EF4444" : "#6B7280" }]}>
                   {upvotes} upvotes
                 </Text>
               </TouchableOpacity>
@@ -594,10 +702,16 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
                 </View>
               )}
 
-              {(complaint.currentStatus === 'resolved' || complaint.currentStatus === 'rejected') && (
+              {canAppealComplaint() && (
                 <TouchableOpacity style={styles.appealBtn} onPress={() => setAppealVisible(true)}>
                   <Text style={styles.appealBtnText}>Appeal this Decision</Text>
                 </TouchableOpacity>
+              )}
+
+              {isFinalAdminRejectedAppeal() && (
+                <Text style={[styles.label, { color: '#B91C1C', textAlign: 'center' }]}>
+                  This complaint was finally rejected by admin. It cannot be appealed again and may only be deleted.
+                </Text>
               )}
             </View>
           )}
@@ -784,6 +898,24 @@ const styles = StyleSheet.create({
   bumpButtonLarge: { backgroundColor: '#F0F9FF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#BAE6FD', alignItems: 'center', marginBottom: 16 },
   bumpTextLarge: { color: '#0284C7', fontWeight: 'bold', fontSize: 16 },
   bumpSubText: { color: '#0EA5E9', fontSize: 12, marginTop: 4 },
+  deleteComplaintButton: {
+    backgroundColor: '#DC2626',
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  deleteComplaintButtonDisabled: {
+    opacity: 0.7,
+  },
+  deleteComplaintText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
   actionText: { fontSize: 14 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },

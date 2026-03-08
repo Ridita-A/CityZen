@@ -270,7 +270,7 @@ export default function AuthorityComplaintDetailScreen({ route, navigation, onLo
         resolved: 3,
         closed: 3,
         rejected: 0,
-        appealed: 2,
+        appealed: 0,
         completed: 3,
         critical_failure: 2,
     };

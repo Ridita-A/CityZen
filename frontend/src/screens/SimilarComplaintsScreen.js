@@ -126,15 +126,15 @@ export default function SimilarComplaintsScreen({ navigation, route, darkMode, t
       }
       const res = await api.post(`/complaints/${item.id}/upvote`, { citizenUid: userData.firebaseUid });
       if (res.data && res.data.upvotes !== undefined) {
-        setComplaints(prev => prev.map(c => c.id === item.id ? { ...c, upvotes: res.data.upvotes, hasUpvoted: true } : c));
+        setComplaints(prev => prev.map(c => (
+          c.id === item.id
+            ? { ...c, upvotes: res.data.upvotes, hasUpvoted: Boolean(res.data.hasUpvoted) }
+            : c
+        )));
       }
     } catch (e) {
-      if (e.response && e.response.status === 400) {
-        console.log('Upvote prevented:', e.response.data.message);
-        Alert.alert('Info', 'You have already upvoted this complaint.');
-      } else {
-        console.error('Upvote failed', e);
-      }
+      console.error('Upvote toggle failed', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to update upvote.');
     }
   };
 
@@ -222,8 +222,8 @@ export default function SimilarComplaintsScreen({ navigation, route, darkMode, t
                   style={styles.actionButton}
                   onPress={() => handleUpvote(item)}
                 >
-                  <Heart size={16} color={item.upvotes > 0 ? "#EF4444" : "#6B7280"} fill={item.hasUpvoted ? "#EF4444" : "none"} />
-                  <Text style={[styles.actionText, { marginLeft: 4, color: item.upvotes > 0 ? "#EF4444" : "#6B7280" }]}>
+                  <Heart size={16} color={item.hasUpvoted ? "#EF4444" : "#6B7280"} fill={item.hasUpvoted ? "#EF4444" : "none"} />
+                  <Text style={[styles.actionText, { marginLeft: 4, color: item.hasUpvoted ? "#EF4444" : "#6B7280" }]}>
                     {item.upvotes || 0} upvotes
                   </Text>
                 </TouchableOpacity>

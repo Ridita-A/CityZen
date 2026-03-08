@@ -10,8 +10,8 @@ gnome-terminal \
     npm run dev;
     exec bash"
 
-# ⏳ Wait 15 seconds
-sleep 15
+# ⏳ Wait 20 seconds
+sleep 20
 
 
 # === Terminal 2: AI Service ===

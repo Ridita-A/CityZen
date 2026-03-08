@@ -33,17 +33,21 @@ export default function NotificationsScreen({ navigation, onLogout, darkMode, to
         const isStatusUpdate = item.type === 'status_update' || item.title === 'Status Update';
         const isStrikeWarning = item.type === 'strike_warning';
         const isUnread = !item.read;
+        const iconBackground = isStrikeWarning
+            ? (darkMode ? '#3F1D1D' : '#FEE2E2')
+            : (isStatusUpdate ? (darkMode ? '#1E3A5F' : '#EFF6FF') : (darkMode ? '#374151' : '#F3F4F6'));
 
         return (
             <TouchableOpacity
                 style={[
                     styles.card,
                     darkMode && styles.cardDark,
-                    isUnread && styles.unreadCard
+                    isUnread && styles.unreadCard,
+                    isUnread && darkMode && styles.unreadCardDark,
                 ]}
                 onPress={() => handleNotificationPress(item)}
             >
-                <View style={[styles.iconBox, { backgroundColor: isStrikeWarning ? '#FEE2E2' : (isStatusUpdate ? '#EFF6FF' : '#F3F4F6') }]}>
+                <View style={[styles.iconBox, { backgroundColor: iconBackground }]}>
                     {isStrikeWarning ? <AlertTriangle size={24} color="#EF4444" /> : (isStatusUpdate ? <Info size={24} color="#1E88E5" /> : <Bell size={24} color="#6B7280" />)}
                 </View>
                 <View style={{ flex: 1 }}>
@@ -51,8 +55,8 @@ export default function NotificationsScreen({ navigation, onLogout, darkMode, to
                         <Text style={[styles.title, darkMode && styles.textWhite]}>{item.title}</Text>
                         {isUnread && <View style={styles.unreadDot} />}
                     </View>
-                    <Text style={styles.message}>{item.message}</Text>
-                    <Text style={styles.time}>{new Date(item.timestamp).toLocaleString()}</Text>
+                    <Text style={[styles.message, darkMode && styles.messageDark]}>{item.message}</Text>
+                    <Text style={[styles.time, darkMode && styles.timeDark]}>{new Date(item.timestamp).toLocaleString()}</Text>
                 </View>
             </TouchableOpacity>
         );
@@ -64,8 +68,8 @@ export default function NotificationsScreen({ navigation, onLogout, darkMode, to
             <View style={styles.header}>
                 <Text style={[styles.heading, darkMode && styles.textWhite]}>Notifications</Text>
                 {notifications.some(n => !n.read) && markAllAsRead && (
-                    <TouchableOpacity onPress={markAllAsRead} style={styles.markAllBtn}>
-                        <Text style={styles.markAllText}>Mark all read</Text>
+                    <TouchableOpacity onPress={markAllAsRead} style={[styles.markAllBtn, darkMode && styles.markAllBtnDark]}>
+                        <Text style={[styles.markAllText, darkMode && styles.markAllTextDark]}>Mark all read</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -77,8 +81,8 @@ export default function NotificationsScreen({ navigation, onLogout, darkMode, to
                 contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
                 ListEmptyComponent={
                     <View style={styles.empty}>
-                        <Bell size={48} color="#9CA3AF" />
-                        <Text style={styles.emptyText}>No notifications yet</Text>
+                        <Bell size={48} color={darkMode ? '#4B5563' : '#9CA3AF'} />
+                        <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No notifications yet</Text>
                     </View>
                 }
             />
@@ -94,15 +98,21 @@ const styles = StyleSheet.create({
     heading: { fontSize: 24, fontWeight: 'bold', color: '#1F2937' },
     textWhite: { color: 'white' },
     markAllBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#EFF6FF', borderRadius: 8 },
+    markAllBtnDark: { backgroundColor: '#1E3A5F' },
     markAllText: { color: '#1E88E5', fontWeight: '600', fontSize: 14 },
+    markAllTextDark: { color: '#93C5FD' },
     card: { flexDirection: 'row', backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' },
     cardDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
     unreadCard: { borderLeftWidth: 4, borderLeftColor: '#1E88E5', backgroundColor: '#F0F9FF' },
+    unreadCardDark: { backgroundColor: '#1E3A5F', borderColor: '#60A5FA' },
     iconBox: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
     title: { fontWeight: 'bold', fontSize: 16, color: '#1F2937', marginBottom: 4 },
     message: { color: '#6B7280', fontSize: 14, marginBottom: 4 },
+    messageDark: { color: '#D1D5DB' },
     time: { color: '#9CA3AF', fontSize: 12 },
+    timeDark: { color: '#94A3B8' },
     unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#1E88E5', marginLeft: 8 },
     empty: { alignItems: 'center', marginTop: 60, gap: 16 },
-    emptyText: { color: '#9CA3AF', fontSize: 16 }
+    emptyText: { color: '#9CA3AF', fontSize: 16 },
+    emptyTextDark: { color: '#9CA3AF' },
 });

@@ -16,6 +16,15 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
 
   const displayImage = item.images?.find(img => img.type === 'initial') || item.images?.[0];
 
+  const applyUpvoteResult = (responseData) => {
+    if (!responseData || responseData.upvotes === undefined) return;
+    setComplaints(prev => prev.map(c => (
+      c.id === item.id
+        ? { ...c, upvotes: responseData.upvotes, hasUpvoted: Boolean(responseData.hasUpvoted) }
+        : c
+    )));
+  };
+
   const handleDoubleTap = async () => {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
@@ -25,23 +34,18 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
       try {
         if (!userData || !userData.firebaseUid) return;
 
-        // Show heart animation
-        Animated.sequence([
-          Animated.spring(heartScaleRef, { toValue: 1, useNativeDriver: true, friction: 3 }),
-          Animated.delay(400),
-          Animated.timing(heartScaleRef, { toValue: 0, duration: 200, useNativeDriver: true })
-        ]).start();
-
         const res = await api.post(`/complaints/${item.id}/upvote`, { citizenUid: userData.firebaseUid });
-        if (res.data && res.data.upvotes !== undefined) {
-          setComplaints(prev => prev.map(c => c.id === item.id ? { ...c, upvotes: res.data.upvotes, hasUpvoted: true } : c));
+        applyUpvoteResult(res.data);
+
+        if (res.data?.hasUpvoted) {
+          Animated.sequence([
+            Animated.spring(heartScaleRef, { toValue: 1, useNativeDriver: true, friction: 3 }),
+            Animated.delay(400),
+            Animated.timing(heartScaleRef, { toValue: 0, duration: 200, useNativeDriver: true })
+          ]).start();
         }
       } catch (e) {
-        if (e.response && e.response.status === 400) {
-          // Already upvoted
-        } else {
-          console.error('Upvote failed', e);
-        }
+        console.error('Upvote toggle failed', e);
       }
     }
     lastTapRef.current = now;
@@ -108,15 +112,10 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
                   return;
                 }
                 const res = await api.post(`/complaints/${item.id}/upvote`, { citizenUid: userData.firebaseUid });
-                if (res.data && res.data.upvotes !== undefined) {
-                  setComplaints(prev => prev.map(c => c.id === item.id ? { ...c, upvotes: res.data.upvotes, hasUpvoted: true } : c));
-                }
+                applyUpvoteResult(res.data);
               } catch (e) {
-                if (e.response && e.response.status === 400) {
-                  Alert.alert('Info', 'You have already upvoted this complaint.');
-                } else {
-                  console.error('Upvote failed', e);
-                }
+                console.error('Upvote toggle failed', e);
+                Alert.alert('Error', e.response?.data?.message || 'Failed to update upvote.');
               }
             }}
           >

@@ -1741,7 +1741,7 @@ exports.appealComplaint = async (req, res) => {
       return res.status(400).json({ message: 'Appeal reason is required.' });
     }
 
-    const complaint = await Complaint.findByPk(id);
+    const complaint = await Complaint.findByPk(id, { transaction: t });
     if (!complaint) {
       await t.rollback();
       return res.status(404).json({ message: 'Complaint not found.' });
@@ -1753,8 +1753,18 @@ exports.appealComplaint = async (req, res) => {
       return res.status(403).json({ message: 'Only the reporter can appeal this complaint.' });
     }
 
+    const complaintStatus = String(complaint.currentStatus || '').toLowerCase();
+    const appealStatus = String(complaint.appealStatus || 'none').toLowerCase();
+
+    if (appealStatus === 'rejected') {
+      await t.rollback();
+      return res.status(400).json({
+        message: 'This complaint was finally rejected by admin and cannot be appealed again. You may delete it instead.'
+      });
+    }
+
     const eligibleStatuses = ['resolved', 'rejected'];
-    if (!eligibleStatuses.includes(complaint.currentStatus)) {
+    if (!eligibleStatuses.includes(complaintStatus)) {
       await t.rollback();
       return res.status(400).json({ message: 'Complaint can only be appealed if resolved or rejected.' });
     }

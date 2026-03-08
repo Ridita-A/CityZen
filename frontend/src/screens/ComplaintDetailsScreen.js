@@ -74,7 +74,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     resolved: 3,
     closed: 3,
     rejected: 0,
-    appealed: 2,
+    appealed: 0,
     completed: 3,
     critical_failure: 2,
   };
@@ -142,6 +142,9 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       if (appealSubmitting) return;
       if (!appealReason) return Alert.alert('Error', 'Please provide a reason for appeal.');
       if (!userData || !userData.firebaseUid) return Alert.alert('Error', 'Please login to appeal');
+      if (!canAppealComplaint()) {
+        return Alert.alert('Not allowed', 'This complaint was finally rejected by admin and can no longer be appealed. You may delete it instead.');
+      }
 
       setAppealSubmitting(true);
       const formData = new FormData();
@@ -160,11 +163,15 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       });
 
       setAppealVisible(false);
-      setComplaint(prev => ({ ...prev, currentStatus: 'appealed' }));
+      setComplaint(prev => (
+        prev
+          ? { ...prev, currentStatus: 'appealed', appealStatus: 'pending', appealReason }
+          : prev
+      ));
       Alert.alert('Success', 'Appeal submitted successfully.');
     } catch (e) {
       console.error('Appeal failed', e);
-      Alert.alert('Error', 'Failed to submit appeal.');
+      Alert.alert('Error', e.response?.data?.message || 'Failed to submit appeal.');
     } finally {
       setAppealSubmitting(false);
     }
@@ -296,6 +303,19 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     if (!isComplaintOwner()) return false;
     const status = String(complaint?.currentStatus || '').toLowerCase();
     return ['pending', 'rejected'].includes(status);
+  };
+
+  const isFinalAdminRejectedAppeal = () => {
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    const appealStatus = String(complaint?.appealStatus || '').toLowerCase();
+    return status === 'rejected' && appealStatus === 'rejected';
+  };
+
+  const canAppealComplaint = () => {
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    if (!['resolved', 'rejected'].includes(status)) return false;
+    if (isFinalAdminRejectedAppeal()) return false;
+    return true;
   };
 
   const handleDeleteComplaint = () => {
@@ -682,10 +702,16 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
                 </View>
               )}
 
-              {(complaint.currentStatus === 'resolved' || complaint.currentStatus === 'rejected') && (
+              {canAppealComplaint() && (
                 <TouchableOpacity style={styles.appealBtn} onPress={() => setAppealVisible(true)}>
                   <Text style={styles.appealBtnText}>Appeal this Decision</Text>
                 </TouchableOpacity>
+              )}
+
+              {isFinalAdminRejectedAppeal() && (
+                <Text style={[styles.label, { color: '#B91C1C', textAlign: 'center' }]}>
+                  This complaint was finally rejected by admin. It cannot be appealed again and may only be deleted.
+                </Text>
               )}
             </View>
           )}

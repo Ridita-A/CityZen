@@ -7,8 +7,16 @@ import Navigation from '../components/Navigation';
 
 export default function AuthorityComplaintListScreen({ navigation, route, onLogout, darkMode, toggleDarkMode }) {
     const { statusFilter, title, complaints: initialComplaints } = route.params || {};
-    const [complaints, setComplaints] = useState(initialComplaints || []);
-    const [filteredComplaints, setFilteredComplaints] = useState(initialComplaints || []);
+    // Defensive: always use arrays
+    const [complaints, setComplaints] = useState(Array.isArray(initialComplaints) ? initialComplaints : []);
+    const [filteredComplaints, setFilteredComplaints] = useState(Array.isArray(initialComplaints) ? initialComplaints : []);
+    // Debug: log first complaint object
+    React.useEffect(() => {
+        if (Array.isArray(initialComplaints) && initialComplaints.length > 0) {
+            // eslint-disable-next-line no-console
+            console.log('First complaint object:', initialComplaints[0]);
+        }
+    }, [initialComplaints]);
     const [showPDFModal, setShowPDFModal] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState('all');
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); // 0-11
@@ -42,7 +50,8 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
     };
 
     useEffect(() => {
-        const sorted = sortComplaintsByBump(initialComplaints || []);
+        const safeList = Array.isArray(initialComplaints) ? initialComplaints : [];
+        const sorted = sortComplaintsByBump(safeList);
         setComplaints(sorted);
         setFilteredComplaints(sorted);
     }, [initialComplaints]);
@@ -429,8 +438,8 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
             </View>
 
             <FlatList
-                data={filteredComplaints}
-                keyExtractor={item => item.id.toString()}
+                data={Array.isArray(filteredComplaints) ? filteredComplaints : []}
+                keyExtractor={item => (item && item.id ? item.id.toString() : Math.random().toString())}
                 contentContainerStyle={styles.listContent}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
@@ -443,55 +452,60 @@ export default function AuthorityComplaintListScreen({ navigation, route, onLogo
                         </Text>
                     </View>
                 }
-                renderItem={({ item }) => (
-                    <TouchableOpacity
-                        style={[styles.card, darkMode && styles.cardDark]}
-                        onPress={() => navigation.navigate('AuthorityComplaintDetail', { complaintId: item.id, initialData: item })}
-                        activeOpacity={0.7}
-                    >
-                        {(() => {
-                            const deadlineInfo = getDeadlineInfo(item);
-                            if (!deadlineInfo.showActive && !deadlineInfo.showMissed) return null;
-
-                            return (
-                                <View style={[styles.deadlineRow, deadlineInfo.showMissed && styles.deadlineRowMissed]}>
-                                    <Clock size={12} color={deadlineInfo.showMissed ? '#FFFFFF' : '#7F1D1D'} />
-                                    <Text style={[styles.deadlineLabel, deadlineInfo.showMissed && styles.deadlineLabelMissed]}>
-                                        {deadlineInfo.showMissed ? 'DEADLINE MISSED' : '48-HOUR RESPONSE DEADLINE'}
-                                    </Text>
-                                    {deadlineInfo.showActive && <Text style={styles.deadlineClock}>{deadlineInfo.label}</Text>}
+                renderItem={({ item }) => {
+                    if (!item || typeof item !== 'object') return null;
+                    // Defensive: check required fields
+                    const safeTitle = typeof item.title === 'string' ? item.title : 'Untitled';
+                    const safeDesc = typeof item.description === 'string' ? item.description : 'No description provided';
+                    const safeId = item.id || Math.random();
+                    return (
+                        <TouchableOpacity
+                            style={[styles.card, darkMode && styles.cardDark]}
+                            onPress={() => navigation.navigate('AuthorityComplaintDetail', { complaintId: item.id, initialData: item })}
+                            activeOpacity={0.7}
+                        >
+                            {(() => {
+                                const deadlineInfo = getDeadlineInfo(item);
+                                if (!deadlineInfo.showActive && !deadlineInfo.showMissed) return null;
+                                return (
+                                    <View style={[styles.deadlineRow, deadlineInfo.showMissed && styles.deadlineRowMissed]}>
+                                        <Clock size={12} color={deadlineInfo.showMissed ? '#FFFFFF' : '#7F1D1D'} />
+                                        <Text style={[styles.deadlineLabel, deadlineInfo.showMissed && styles.deadlineLabelMissed]}>
+                                            {deadlineInfo.showMissed ? 'DEADLINE MISSED' : '48-HOUR RESPONSE DEADLINE'}
+                                        </Text>
+                                        {deadlineInfo.showActive && <Text style={styles.deadlineClock}>{deadlineInfo.label}</Text>}
+                                    </View>
+                                );
+                            })()}
+                            <View style={styles.cardHeader}>
+                                <View style={[styles.iconContainer, darkMode && styles.iconContainerDark]}>
+                                    <StatusIcon status={item.currentStatus} />
                                 </View>
-                            );
-                        })()}
-                        <View style={styles.cardHeader}>
-                            <View style={[styles.iconContainer, darkMode && styles.iconContainerDark]}>
-                                <StatusIcon status={item.currentStatus} />
+                                <View style={styles.cardContent}>
+                                    <Text style={[styles.cardTitle, darkMode && styles.textWhite]} numberOfLines={2}>
+                                        {safeTitle}
+                                    </Text>
+                                    <Text style={[styles.cardDesc, darkMode && styles.textGray]} numberOfLines={2}>
+                                        {safeDesc}
+                                    </Text>
+                                </View>
+                                <StatusBadge
+                                    status={item.currentStatus}
+                                    bumpCount={item.bumpCount}
+                                    responseDelayWarningLogged={item.responseDelayWarningLogged || item.forwardedByAdmin}
+                                />
                             </View>
-                            <View style={styles.cardContent}>
-                                <Text style={[styles.cardTitle, darkMode && styles.textWhite]} numberOfLines={2}>
-                                    {item.title}
-                                </Text>
-                                <Text style={[styles.cardDesc, darkMode && styles.textGray]} numberOfLines={2}>
-                                    {item.description || 'No description provided'}
-                                </Text>
+                            <View style={[styles.cardFooter, darkMode && styles.cardFooterDark]}>
+                                <View style={styles.footerItem}>
+                                    <Calendar size={14} color="#9CA3AF" />
+                                    <Text style={styles.footerText}>
+                                        {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''}
+                                    </Text>
+                                </View>
                             </View>
-                            <StatusBadge
-                                status={item.currentStatus}
-                                bumpCount={item.bumpCount}
-                                responseDelayWarningLogged={item.responseDelayWarningLogged || item.forwardedByAdmin}
-                            />
-                        </View>
-
-                        <View style={[styles.cardFooter, darkMode && styles.cardFooterDark]}>
-                            <View style={styles.footerItem}>
-                                <Calendar size={14} color="#9CA3AF" />
-                                <Text style={styles.footerText}>
-                                    {new Date(item.createdAt).toLocaleDateString()}
-                                </Text>
-                            </View>
-                        </View>
-                    </TouchableOpacity>
-                )}
+                        </TouchableOpacity>
+                    );
+                }}
             />
 
             {renderPDFModal()}

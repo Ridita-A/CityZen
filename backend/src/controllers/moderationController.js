@@ -1,3 +1,37 @@
+/**
+ * Get all users with strikes > 0 (offenders)
+ * Admin only action
+ */
+const getOffenders = async (req, res) => {
+  try {
+    const { Op } = require('sequelize');
+    const offenders = await Citizen.findAll({
+      where: { strikes: { [Op.gt]: 0 } },
+      include: [{
+        model: require('../models').User,
+        as: 'user',
+        attributes: ['firebaseUid', 'email', 'createdAt']
+      }],
+      order: [['strikes', 'DESC']]
+    });
+
+    const formatted = offenders.map(citizen => ({
+      uid: citizen.user.firebaseUid,
+      email: citizen.user.email,
+      strikes: citizen.strikes,
+      last: citizen.banReason || '',
+      createdAt: citizen.user.createdAt
+    }));
+
+    return res.status(200).json(formatted);
+  } catch (error) {
+    console.error('Error getting offenders:', error);
+    return res.status(500).json({
+      message: 'Failed to get offenders',
+      error: error.message
+    });
+  }
+};
 const { User, Citizen, Complaint } = require('../models');
 
 /**
@@ -216,13 +250,13 @@ const getBannedUsers = async (req, res) => {
       include: [{
         model: User,
         as: 'user',
-        attributes: ['uid', 'email', 'createdAt']
+        attributes: ['firebaseUid', 'email', 'createdAt']
       }],
       order: [['bannedAt', 'DESC']]
     });
 
     const formattedUsers = bannedUsers.map(citizen => ({
-      uid: citizen.user.uid,
+      uid: citizen.user.firebaseUid,
       email: citizen.user.email,
       strikes: citizen.strikes,
       bannedAt: citizen.bannedAt,
@@ -318,4 +352,5 @@ module.exports = {
   getUserModerationInfo,
   getBannedUsers,
   getMyModerationInfo
+  ,getOffenders
 };

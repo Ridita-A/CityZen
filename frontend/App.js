@@ -40,6 +40,7 @@ const NavigationAware = () => {
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
+import EmailOtpScreen from './src/screens/EmailOtpScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -62,6 +63,7 @@ import OfflineGalleryScreen from './src/screens/OfflineGalleryScreen';
 import DraftComplaintSubmitScreen from './src/screens/DraftComplaintSubmitScreen';
 import DraftSubmittedScreen from './src/screens/DraftSubmittedScreen';
 import AdminCategoryRequestDetailsScreen from './src/screens/AdminCategoryRequestDetailsScreen';
+import AdminAnalyticsScreen from './src/screens/AdminAnalyticsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -106,6 +108,12 @@ export default function App() {
             >
               {(props) => <SignupScreen {...props} onSignup={() => props.navigation.replace('HomeScreen')} />}
             </Stack.Screen>
+            <Stack.Screen
+              name="EmailOtp"
+              options={{ animation: 'slide_from_right' }}
+            >
+              {(props) => <EmailOtpScreen {...props} />}
+            </Stack.Screen>
             <Stack.Screen name="HomeScreen">{(props) => <HomeScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen name="Feed">{(props) => <FeedScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen
@@ -132,6 +140,7 @@ export default function App() {
             <Stack.Screen name="AdminCategoryRequestDetails">{(props) => <AdminCategoryRequestDetailsScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="AddEvidence">{(props) => <AddEvidenceScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="OfflineGallery">{(props) => <OfflineGalleryScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
+            <Stack.Screen name="AdminAnalytics">{(props) => <AdminAnalyticsScreen {...props} darkMode={darkMode} />}</Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
       </NotificationProvider>

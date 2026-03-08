@@ -162,9 +162,11 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 		});
 	};
 
+	// Always return full complaint objects, never just status or partial data
 	const getFilteredComplaints = (metricType) => {
-		if (!metricType || metricType === 'total') return filteredComplaints;
-		return filteredComplaints.filter(c => {
+		if (!metricType || metricType === 'total') return Array.isArray(filteredComplaints) ? filteredComplaints : [];
+		return (Array.isArray(filteredComplaints) ? filteredComplaints : []).filter(c => {
+			if (!c || typeof c !== 'object') return false;
 			const status = c.currentStatus ? c.currentStatus.toLowerCase() : '';
 			if (metricType === 'resolved') return ['resolved', 'closed', 'completed'].includes(status);
 			if (metricType === 'pending') return status === 'pending';

@@ -645,8 +645,10 @@ export const NotificationProvider = ({ children }) => {
             });
 
             // Detect appealed complaints that disappeared (deleted by admin moderation).
-            const currentComplaintIds = new Set(complaints.map(c => String(c.id)));
-            const deletedAppealedComplaintIds = Object.entries(previousStatuses)
+            const safeComplaints = Array.isArray(complaints) ? complaints : [];
+            const currentComplaintIds = new Set(safeComplaints.map(c => String(c.id)));
+            const safePreviousStatuses = previousStatuses && typeof previousStatuses === 'object' ? previousStatuses : {};
+            const deletedAppealedComplaintIds = Object.entries(safePreviousStatuses)
                 .filter(([complaintId, status]) => status === 'appealed' && !currentComplaintIds.has(String(complaintId)))
                 .map(([complaintId]) => complaintId);
 
@@ -984,7 +986,8 @@ export const NotificationProvider = ({ children }) => {
             }
 
             // Detect newly assigned complaints by ID diff (count-only checks miss replace-in-place cases).
-            const newEntries = complaints.filter(c => !lastKnownIds.includes(c.id));
+            const safeComplaints = Array.isArray(complaints) ? complaints : [];
+            const newEntries = safeComplaints.filter(c => !lastKnownIds.includes(c.id));
             if (newEntries.length > 0) {
                 newEntries.forEach(complaint => {
                     if (userRoleRef.current !== 'authority') return;

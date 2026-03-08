@@ -2,13 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Activity, ShieldAlert, Clock, AlertTriangle, Scale, ArrowLeft } from 'lucide-react-native';
 import api from '../services/api';
+import { useNavigation } from '@react-navigation/native';
 
 export default function AdminStatusScreen({ darkMode, onJump }) {
-  const [departments] = useState([
-    { name: 'DWASA', active: 14, resolved: 88, color: '#1E88E5', perf: '92%' },
-    { name: 'City Corp', active: 42, resolved: 156, color: '#8B5CF6', perf: '85%' },
-    { name: 'DESCO', active: 6, resolved: 44, color: '#F59E0B', perf: '98%' }
-  ]);
+  const [departments, setDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  // Fetch department performance stats
+  const fetchDepartments = async () => {
+    setLoadingDepartments(true);
+    try {
+      const res = await api.get('/admin/departments/stats');
+      // Expecting array of { name, active, resolved, color, perf }
+      setDepartments(res.data || []);
+    } catch (error) {
+      console.error('Department stats fetch error:', error.response?.data || error.message);
+    } finally {
+      setLoadingDepartments(false);
+    }
+  };
 
   const [kpis, setKpis] = useState({ serviceHealth: null, avgSolveHours: null, pending: null });
   const [kpiDetails, setKpiDetails] = useState(null);
@@ -45,14 +56,18 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
     }
   };
 
+
   useEffect(() => {
     fetchKpis();
+    fetchDepartments();
   }, []);
 
   const { useFocusEffect } = require('@react-navigation/native');
+
   useFocusEffect(
     React.useCallback(() => {
       fetchKpis();
+      fetchDepartments();
     }, [])
   );
 
@@ -60,6 +75,8 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
     setDetailType(type);
     setView('detail');
   };
+
+  const navigation = useNavigation();
 
   if (view === 'detail' && kpiDetails) {
     return (
@@ -74,7 +91,23 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
 
   return (
     <ScrollView contentContainerStyle={styles.padding}>
-      <Text style={[styles.title, darkMode && { color: 'white' }]}>Command Center</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Text style={[styles.title, darkMode && { color: 'white' }]}>Command Center</Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#1E88E5',
+            borderRadius: 8,
+            paddingVertical: 6,
+            paddingHorizontal: 14,
+            marginLeft: 10,
+            alignItems: 'center',
+            flexDirection: 'row',
+          }}
+          onPress={() => navigation.navigate('AdminAnalytics')}
+        >
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>View Analytics</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.kpiGrid}>
         <KPIBox
@@ -133,16 +166,29 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
 
       <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Dept Performance</Text>
       <View style={[styles.analyticsCard, darkMode && styles.cardDark]}>
-        {departments.map(dept => (
-          <View key={dept.name} style={styles.deptRow}>
-            <View style={{ flex: 1 }}><Text style={[styles.deptName, darkMode && { color: 'white' }]}>{dept.name}</Text><Text style={styles.deptSub}>{dept.active} Active</Text></View>
-            <View style={styles.progressContainer}>
-              <Text style={styles.perfText}>{dept.perf}</Text>
-              <View style={styles.progressBase}><View style={[styles.progressFill, { backgroundColor: dept.color, width: dept.perf }]} /></View>
+        {loadingDepartments ? (
+          <ActivityIndicator size="small" color="#1E88E5" style={{ marginVertical: 20 }} />
+        ) : departments.length === 0 ? (
+          <Text style={{ color: darkMode ? 'white' : '#6B7280', textAlign: 'center', padding: 12 }}>No department stats available.</Text>
+        ) : (
+          departments.map(dept => (
+            <View key={dept.name} style={styles.deptRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.deptName, darkMode && { color: 'white' }]}>{dept.name}</Text>
+                <Text style={styles.deptSub}>{dept.active} Active</Text>
+              </View>
+              <View style={styles.progressContainer}>
+                <Text style={styles.perfText}>{dept.perf}</Text>
+                <View style={styles.progressBase}>
+                  <View style={[styles.progressFill, { backgroundColor: dept.color, width: dept.perf }]} />
+                </View>
+              </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </View>
+
+      // ...existing code...
     </ScrollView>
   );
 }

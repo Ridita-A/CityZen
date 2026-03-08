@@ -468,6 +468,20 @@ exports.createComplaint = async (req, res) => {
       include: [{ model: Citizen }]
     });
 
+    if (!user) {
+      await t.rollback();
+      return res.status(401).json({
+        message: 'Authentication required. Please log in before submitting a complaint.'
+      });
+    }
+
+    if (String(user.role || '').toLowerCase() !== 'citizen' || !user.Citizen) {
+      await t.rollback();
+      return res.status(403).json({
+        message: 'Only authenticated citizen accounts can submit complaints.'
+      });
+    }
+
     if (user && user.Citizen && user.Citizen.isBanned) {
       await t.rollback();
       return res.status(403).json({

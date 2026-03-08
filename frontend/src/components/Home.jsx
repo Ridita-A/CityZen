@@ -21,7 +21,7 @@ export default function Home({ onLogout, darkMode, toggleDarkMode, navigation })
 
         {/* Quick Actions */}
         <View style={styles.actionsGrid}>
-          <TouchableOpacity onPress={() => navigation?.navigate('SubmitComplaint')} style={styles.mainActionBtn}>
+          <TouchableOpacity onPress={() => navigation?.navigate('SubmitComplaintDetails')} style={styles.mainActionBtn}>
             <View style={styles.actionContent}>
               <View style={styles.iconBoxWhite}>
                 <PlusCircle size={32} color="white" />

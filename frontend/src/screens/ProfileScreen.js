@@ -20,6 +20,22 @@ export default function ProfileScreen({ navigation, onLogout, darkMode, toggleDa
     loading: true
   });
 
+  // Auth guard - redirect if not logged in
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const userDataStr = await AsyncStorage.getItem('userData');
+        if (!userDataStr) {
+          navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] });
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] });
+      }
+    };
+    checkAuth();
+  }, [navigation]);
+
   useEffect(() => {
     loadUserData();
   }, []);

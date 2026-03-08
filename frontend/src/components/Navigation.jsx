@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar, Alert } from 'react-native';
 import { Bell, Moon, Sun, Building2, LogOut } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNotification, useAdminNotification, useAuthorityNotification } from '../context/NotificationContext';
 import NotificationDropdown from './NotificationDropdown';
 
@@ -33,21 +34,40 @@ export default function Navigation({ onLogout, darkMode, toggleDarkMode, navigat
     setShowDropdown(false);
   };
 
+  const checkAuthAndNavigateHome = async () => {
+    try {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) {
+        Alert.alert(
+          'Login Required',
+          'Please log in or create an account to access this page.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Log In', onPress: () => navigation?.navigate('Login') },
+            { text: 'Sign Up', onPress: () => navigation?.navigate('Signup') }
+          ]
+        );
+        return;
+      }
+      if (userRole === 'admin') {
+        navigation?.navigate('AdminDashboard');
+      } else if (userRole === 'authority') {
+        navigation?.navigate('AuthorityDashboard');
+      } else {
+        navigation?.navigate('HomeScreen');
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+    }
+  };
+
   return (
     <>
       <View style={[styles.headerContainer, darkMode && styles.darkBg]}>
         <View style={styles.contentRow}>
           {/* Logo */}
           <TouchableOpacity
-            onPress={() => {
-              if (userRole === 'admin') {
-                navigation?.navigate('AdminDashboard');
-              } else if (userRole === 'authority') {
-                navigation?.navigate('AuthorityDashboard');
-              } else {
-                navigation?.navigate('HomeScreen');
-              }
-            }}
+            onPress={checkAuthAndNavigateHome}
             style={styles.logoContainer}
           >
             <Building2 size={28} color="#1E88E5" />

@@ -3,6 +3,7 @@ import { View, Text, Image, TextInput, TouchableOpacity, ScrollView, StyleSheet,
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import Navigation from '../components/Navigation';
+import GuestNavigation from '../components/GuestNavigation';
 import BottomNav from '../components/BottomNav';
 import { Search, MapPin, Heart, AlertCircle, Filter, SlidersHorizontal, X, Camera } from 'lucide-react-native';
 import axios from 'axios';
@@ -32,7 +33,18 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
     if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
       // Double tap detected - upvote
       try {
-        if (!userData || !userData.firebaseUid) return;
+        if (!userData || !userData.firebaseUid) {
+          Alert.alert(
+            'Login Required', 
+            'Please log in or create an account to upvote complaints',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Log In', onPress: () => navigation.navigate('Login') },
+              { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+            ]
+          );
+          return;
+        }
 
         const res = await api.post(`/complaints/${item.id}/upvote`, { citizenUid: userData.firebaseUid });
         applyUpvoteResult(res.data);
@@ -46,6 +58,9 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
         }
       } catch (e) {
         console.error('Upvote toggle failed', e);
+        if (e.response?.status === 400) {
+          Alert.alert('Error', 'Login session expired. Please log out and log back in.');
+        }
       }
     }
     lastTapRef.current = now;
@@ -108,14 +123,25 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
             onPress={async () => {
               try {
                 if (!userData || !userData.firebaseUid) {
-                  Alert.alert('Error', 'Please login to upvote');
+                  Alert.alert(
+                    'Login Required', 
+                    'Please log in or create an account to upvote complaints',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Log In', onPress: () => navigation.navigate('Login') },
+                      { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+                    ]
+                  );
                   return;
                 }
                 const res = await api.post(`/complaints/${item.id}/upvote`, { citizenUid: userData.firebaseUid });
                 applyUpvoteResult(res.data);
               } catch (e) {
                 console.error('Upvote toggle failed', e);
-                Alert.alert('Error', e.response?.data?.message || 'Failed to update upvote.');
+                const errorMsg = e.response?.status === 400 
+                  ? 'Login session expired. Please log out and log back in.'
+                  : (e.response?.data?.message || 'Failed to update upvote.');
+                Alert.alert('Error', errorMsg);
               }
             }}
           >
@@ -133,7 +159,21 @@ const ComplaintCard = ({ item, navigation, userData, darkMode, setComplaints, op
 
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => navigation.navigate('AddEvidence', { complaintId: item.id })}
+            onPress={() => {
+              if (!userData || !userData.firebaseUid) {
+                Alert.alert(
+                  'Login Required',
+                  'Please log in or create an account to add evidence',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Log In', onPress: () => navigation.navigate('Login') },
+                    { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+                  ]
+                );
+                return;
+              }
+              navigation.navigate('AddEvidence', { complaintId: item.id });
+            }}
           >
             <Camera size={18} color="#6B7280" />
             <Text style={styles.actionBtnLabel}>Evidence</Text>
@@ -179,6 +219,10 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
   const [reportReason, setReportReason] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [showGuestFabHint, setShowGuestFabHint] = useState(true);
+
+  const guestFabFloat = useRef(new Animated.Value(0)).current;
+  const guestFabPulse = useRef(new Animated.Value(0)).current;
 
   const REPORT_REASONS = [
     { key: 'harassment_threats', label: 'Harassment & Threats' },
@@ -211,9 +255,24 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
   const fetchComplaints = useCallback(async () => {
     try {
       setError(null);
-      // Get user info
+      // Get user info (optional for guest users)
       const jsonValue = await AsyncStorage.getItem('userData');
       const retrievedUserData = jsonValue != null ? JSON.parse(jsonValue) : null;
+      
+      // For authenticated users, validate they have firebaseUid
+      if (retrievedUserData && !retrievedUserData.firebaseUid) {
+        console.warn('Invalid session: firebaseUid missing. Clearing session.');
+        await AsyncStorage.removeItem('userData');
+        await AsyncStorage.removeItem('userToken');
+        setUserData(null);
+        Alert.alert(
+          'Session Invalid',
+          'Your session is outdated. Please log in again.',
+          [{ text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Landing' }] }) }]
+        );
+        return;
+      }
+      
       setUserData(retrievedUserData);
 
       let url = '/complaints?page=1&limit=50';
@@ -247,6 +306,7 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
       } else if (retrievedUserData && retrievedUserData.firebaseUid) {
         url = `/complaints?page=1&limit=50&citizenUid=${retrievedUserData.firebaseUid}`;
       }
+      // For guest users, just fetch all public complaints (default url)
 
       const response = await api.get(url, {
         headers: {
@@ -338,6 +398,48 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
     return unsubscribe;
   }, [navigation, fetchComplaints]);
 
+  useEffect(() => {
+    if (userData) {
+      setShowGuestFabHint(false);
+      return undefined;
+    }
+
+    setShowGuestFabHint(true);
+
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(guestFabFloat, {
+          toValue: -7,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(guestFabFloat, {
+          toValue: 0,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const pulseLoop = Animated.loop(
+      Animated.timing(guestFabPulse, {
+        toValue: 1,
+        duration: 1400,
+        useNativeDriver: true,
+      })
+    );
+
+    floatLoop.start();
+    pulseLoop.start();
+
+    return () => {
+      floatLoop.stop();
+      pulseLoop.stop();
+      guestFabFloat.setValue(0);
+      guestFabPulse.setValue(0);
+    };
+  }, [userData, guestFabFloat, guestFabPulse]);
+
   // Filter complaints by search query and status
   const filteredComplaints = complaints.filter(complaint => {
     const matchesSearch = complaint.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -418,6 +520,18 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
   }, [fetchComplaints]);
 
   const openReport = (complaint) => {
+    if (!userData || !userData.firebaseUid) {
+      Alert.alert(
+        'Login Required', 
+        'Please log in or create an account to report complaints',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log In', onPress: () => navigation.navigate('Login') },
+          { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+        ]
+      );
+      return;
+    }
     setReportComplaint({ id: complaint.id, title: complaint.title });
     setReportReason('');
     setReportDescription('');
@@ -457,9 +571,21 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
     }
   };
 
+  const showGuestQuickTour = () => {
+    Alert.alert(
+      'Quick Overview',
+      '1. Browse nearby complaints and check live status updates.\n2. Double-tap an image or tap the heart to upvote issues.\n3. Use Filters to narrow by distance, category, date, and status.\n4. Tap the camera button to start reporting with photo + location.\n5. Create an account to submit reports, add evidence, and track progress.',
+      [{ text: 'Got it' }]
+    );
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
+      {userData ? (
+        <Navigation onLogout={onLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} navigation={navigation} />
+      ) : (
+        <GuestNavigation navigation={navigation} darkMode={darkMode} />
+      )}
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -537,7 +663,7 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
           />
         ))}
       </ScrollView>
-      <BottomNav navigation={navigation} darkMode={darkMode} />
+      {userData && <BottomNav navigation={navigation} darkMode={darkMode} />}
 
       {/* Filter Modal (Authority-style) */}
       <Modal
@@ -760,6 +886,72 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
           </View>
         </View>
       </Modal>
+
+      {/* Guest Submit FAB */}
+      {!userData && (
+        <View style={styles.guestTutorialWrap} pointerEvents="box-none">
+          {showGuestFabHint && (
+            <Animated.View
+              style={[
+                styles.guestHintBubble,
+                darkMode && styles.guestHintBubbleDark,
+                { transform: [{ translateY: guestFabFloat }] },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  setShowGuestFabHint(false);
+                  showGuestQuickTour();
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={[styles.guestHintText, darkMode && styles.guestHintTextDark]}>
+                  Tap camera to start your first report
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          <Animated.View style={{ transform: [{ translateY: guestFabFloat }] }}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.guestFabPulse,
+                {
+                  transform: [
+                    {
+                      scale: guestFabPulse.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.45],
+                      }),
+                    },
+                  ],
+                  opacity: guestFabPulse.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.35, 0],
+                  }),
+                },
+              ]}
+            />
+            <TouchableOpacity
+              style={styles.guestFab}
+              onPress={() => {
+                setShowGuestFabHint(false);
+                Alert.alert(
+                  'Submit a Complaint',
+                  'Start reporting an issue in your city. You\'ll need to login before final submission.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Get Started', onPress: () => navigation.navigate('Camera') }
+                  ]
+                );
+              }}
+            >
+              <Camera size={24} color="white" />
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -961,5 +1153,61 @@ const styles = StyleSheet.create({
     marginLeft: -40,
     marginTop: -40,
     opacity: 0.9
+  },
+  guestTutorialWrap: {
+    position: 'absolute',
+    right: 20,
+    bottom: 30,
+    alignItems: 'flex-end',
+  },
+  guestHintBubble: {
+    maxWidth: 220,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  guestHintBubbleDark: {
+    backgroundColor: '#1F2937',
+    borderColor: '#374151',
+  },
+  guestHintText: {
+    color: '#1E88E5',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  guestHintTextDark: {
+    color: '#D1D5DB',
+  },
+  guestFabPulse: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#1E88E5',
+  },
+  guestFab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#1E88E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   }
 });

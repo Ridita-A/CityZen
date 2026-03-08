@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Camera, Image as GalleryIcon, RefreshCcw, ArrowRight } from 'lucide-react-native';
@@ -252,7 +253,27 @@ export default function CameraScreen({ navigation }) {
 
                         <View style={styles.sideButtonContainer}>
                             <TouchableOpacity 
-                                onPress={() => navigation.navigate('OfflineGallery')} 
+                                onPress={async () => {
+                                    try {
+                                        const userDataStr = await AsyncStorage.getItem('userData');
+                                        if (!userDataStr) {
+                                            Alert.alert(
+                                                'Login Required',
+                                                'You need to login or create an account to save drafts and access offline reports.',
+                                                [
+                                                    { text: 'Cancel', style: 'cancel' },
+                                                    { text: 'Log In', onPress: () => navigation.navigate('Login') },
+                                                    { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+                                                ]
+                                            );
+                                            return;
+                                        }
+                                        navigation.navigate('OfflineGallery');
+                                    } catch (error) {
+                                        console.error('Error checking auth for offline gallery:', error);
+                                        navigation.navigate('OfflineGallery');
+                                    }
+                                }} 
                                 style={styles.sideButton}
                             >
                                 <GalleryIcon size={30} color="white" />

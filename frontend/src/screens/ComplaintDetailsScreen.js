@@ -94,7 +94,15 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
   const handleUpvote = async () => {
     try {
       if (!userData || !userData.firebaseUid) {
-        Alert.alert('Error', 'Please login to upvote');
+        Alert.alert(
+          'Login Required',
+          'Please log in or create an account to upvote complaints',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Log In', onPress: () => navigation.navigate('Login') },
+            { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+          ]
+        );
         return;
       }
 

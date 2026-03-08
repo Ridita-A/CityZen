@@ -17,12 +17,15 @@ const OPENROUTER_API_URL = process.env.EXPO_PUBLIC_OPENROUTER_API_URL;
 export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, toggleDarkMode }) {
   const {
     images,
+    setImages,
     location,
+    setLocation,
     title,
     setTitle,
     description,
     setDescription,
     selectedCategory,
+    setSelectedCategory,
     setAssignedAuthorities,
     resetState, // Destructure setAssignedAuthorities
   } = useComplaint();
@@ -32,6 +35,26 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
   const [recommendedAuthorities, setRecommendedAuthorities] = useState([]);
   const [chosenAuthorities, setChosenAuthorities] = useState([]);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+
+  const getAuthenticatedCitizenUid = async () => {
+    try {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return null;
+
+      const userData = JSON.parse(userDataStr);
+      const role = String(userData?.role || '').toLowerCase();
+      const uid = userData?.firebaseUid || userData?.uid || userData?.id || null;
+
+      if (!uid || role !== 'citizen') {
+        return null;
+      }
+
+      return uid;
+    } catch (error) {
+      console.error('Failed to resolve authenticated citizen:', error);
+      return null;
+    }
+  };
 
   const handleChooseAuthority = (authorityId) => {
     setChosenAuthorities(prev => {
@@ -98,6 +121,51 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
       return;
     }
 
+    // Accept submission only for fully authenticated citizen sessions.
+    const uid = await getAuthenticatedCitizenUid();
+
+    if (!uid) {
+      // Save all form data before redirecting to auth
+      try {
+        const pendingSubmission = {
+          images,
+          location,
+          title,
+          description,
+          selectedCategory,
+          chosenAuthorities,
+          autoSubmitOnAuth: true,
+          timestamp: Date.now()
+        };
+        await AsyncStorage.setItem('pendingComplaintSubmission', JSON.stringify(pendingSubmission));
+        
+        Alert.alert(
+          'Login Required',
+          'Please log in or create an account to submit your complaint. Your progress will be saved and submission will complete automatically after login.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Log In', 
+              onPress: () => navigation.navigate('Login', { resumeComplaintSubmission: true })
+            },
+            { 
+              text: 'Sign Up', 
+              onPress: () => navigation.navigate('Signup', { resumeComplaintSubmission: true })
+            }
+          ]
+        );
+      } catch (error) {
+        console.error('Error saving pending submission:', error);
+        Alert.alert('Error', 'Failed to save form data. Please try again.');
+      }
+      return;
+    }
+
+    // Proceed with actual submission
+    await performSubmission(uid);
+  };
+
+  const performSubmission = async (uid) => {
     setIsSubmitting(true);
     setErrors({});
 
@@ -107,26 +175,9 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
     formData.append('latitude', location.latitude);
     formData.append('longitude', location.longitude);
 
-    let uid = auth.currentUser?.uid;
-    try {
-      const userDataStr = await AsyncStorage.getItem('userData');
-      if (userDataStr) {
-        const userData = JSON.parse(userDataStr);
-        uid = userData.uid || userData.id || userData.firebaseUid || uid;
-      }
-    } catch (e) {
-      console.error("Failed to get userData from storage", e);
-    }
-
     formData.append('citizenUid', uid);
     formData.append('categoryId', selectedCategory.id);
     formData.append('chosenAuthorities', JSON.stringify(chosenAuthorities.map(Number)));
-
-    if (!uid) {
-      Alert.alert('Error', 'Could not identify user. Please log in again.');
-      setIsSubmitting(false);
-      return;
-    }
 
     images.forEach((imageUri, index) => {
       const filename = imageUri.split('/').pop();
@@ -155,6 +206,9 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
           }
         }
 
+        // Clear pending submission data on success
+        await AsyncStorage.removeItem('pendingComplaintSubmission');
+        
         Alert.alert("Success", "Complaint Submitted Successfully!");
         const assignedAuthorityNames = chosenAuthorities.map(chosenId => {
           const authority = recommendedAuthorities.find(rec => rec.id === chosenId);
@@ -218,6 +272,52 @@ export default function SubmitComplaintScreen({ navigation, onLogout, darkMode, 
       setIsSubmitting(false);
     }
   };
+
+  // Check for pending submission on component mount
+  useEffect(() => {
+    const checkPendingSubmission = async () => {
+      try {
+        const pendingStr = await AsyncStorage.getItem('pendingComplaintSubmission');
+        if (!pendingStr) return;
+
+        const pending = JSON.parse(pendingStr);
+        
+        // Check if user is now authenticated as a citizen
+        const uid = await getAuthenticatedCitizenUid();
+        if (!uid) return;
+
+        // Restore form data from pending submission
+        if (Array.isArray(pending.images)) {
+          setImages(pending.images);
+        }
+        if (pending.location?.latitude && pending.location?.longitude) {
+          setLocation(pending.location);
+        }
+        if (pending.selectedCategory?.id) {
+          setSelectedCategory(pending.selectedCategory);
+        }
+        setTitle(pending.title || '');
+        setDescription(pending.description || '');
+        setChosenAuthorities(pending.chosenAuthorities || []);
+
+        if (!pending.autoSubmitOnAuth) return;
+
+        // Auto-submit after a brief delay
+        setTimeout(async () => {
+          Alert.alert(
+            'Resuming Submission',
+            'Completing your complaint submission...',
+            [{ text: 'OK' }]
+          );
+          await performSubmission(uid);
+        }, 500);
+      } catch (error) {
+        console.error('Error checking pending submission:', error);
+      }
+    };
+
+    checkPendingSubmission();
+  }, []);
 
   const handleBump = async (complaintId) => {
     try {

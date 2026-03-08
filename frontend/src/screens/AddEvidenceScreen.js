@@ -1,38 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ScrollView, ActivityIndicator } from 'react-native';
-import { Camera, Image as GalleryIcon, ArrowLeft, X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, Image as GalleryIcon, ChevronLeft, X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCcw, ArrowRight } from 'lucide-react-native';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 
 export default function AddEvidenceScreen({ navigation, route }) {
-    const { complaintId } = route.params;
+    const { complaintId, selectedOfflineImage } = route.params || {};
     const [selectedImages, setSelectedImages] = useState([]); // Array of URIs for displaying preview
     const [capturedAssets, setCapturedAssets] = useState([]); // Array of asset objects
     const [isUploading, setIsUploading] = useState(false); // To manage loading state during upload
     const [isVerifying, setIsVerifying] = useState(false); // AI verification loading state
     const [verificationResults, setVerificationResults] = useState({}); // Maps URI -> verdict result
+    
+    // Camera state
+    const [permission, requestPermission] = useCameraPermissions();
+    const cameraRef = useRef(null);
+    const [isCapturing, setIsCapturing] = useState(false);
 
-    //Permissions
-    const requestCameraPermission = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access camera is required!');
-            return false;
+    // Handle returning from Offline Gallery
+    useEffect(() => {
+        if (selectedOfflineImage) {
+            const uri = selectedOfflineImage.imageUri;
+            if (!selectedImages.includes(uri)) {
+                setSelectedImages(prev => [...prev, uri]);
+                setCapturedAssets(prev => [...prev, {
+                    uri: uri,
+                    fileName: `offline-evidence-${selectedOfflineImage.id}.jpg`,
+                    mimeType: 'image/jpeg'
+                }]);
+            }
         }
-        return true;
-    };
-
-    const requestLibraryPermission = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access media library is required!');
-            return false;
-        }
-        return true;
-    };
+    }, [selectedOfflineImage]);
 
     const removeImage = (uriToRemove) => {
         setSelectedImages(prev => prev.filter(uri => uri !== uriToRemove));
@@ -45,40 +46,39 @@ export default function AddEvidenceScreen({ navigation, route }) {
         });
     };
 
-    //Camera
-    const handleImagePick = async () => {
-        const hasPermission = await requestCameraPermission();
-        if (!hasPermission) return;
+    //Camera Capture
+    const takePicture = async () => {
+        if (!cameraRef.current || isCapturing) return;
 
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-            exif: true,
-        });
-
-        if (result.assets?.length > 0) {
-            setSelectedImages(prev => [...prev, result.assets[0].uri]);
-            setCapturedAssets(prev => [...prev, result.assets[0]]);
+        setIsCapturing(true);
+        try {
+            const photo = await cameraRef.current.takePictureAsync({
+                quality: 0.7,
+                skipProcessing: true
+            });
+            
+            if (photo) {
+                setSelectedImages(prev => [...prev, photo.uri]);
+                setCapturedAssets(prev => [...prev, {
+                    uri: photo.uri,
+                    fileName: `evidence-${Date.now()}.jpg`,
+                    mimeType: 'image/jpeg'
+                }]);
+            }
+        } catch (error) {
+            console.error("Capture error:", error);
+            Alert.alert("Error", "Failed to take photo. Please try again.");
+        } finally {
+            setIsCapturing(false);
         }
     };
 
-    const handleLibraryPick = async () => {
-        const hasPermission = await requestLibraryPermission();
-        if (!hasPermission) return;
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-            allowsMultipleSelection: true, // Allow multiple selection
-            exif: true,
+    const handleLibraryPick = () => {
+        navigation.navigate('OfflineGallery', { 
+            mode: 'selection', 
+            returnTo: 'AddEvidence',
+            complaintId: complaintId 
         });
-
-        if (result.assets?.length > 0) {
-            setSelectedImages(prev => [...prev, ...result.assets.map(asset => asset.uri)]);
-            setCapturedAssets(prev => [...prev, ...result.assets]);
-        }
     };
 
     // AI Evidence Verification
@@ -158,13 +158,11 @@ export default function AddEvidenceScreen({ navigation, route }) {
         formData.append('complaintId', complaintId);
 
         capturedAssets.forEach((asset, index) => {
-            // Adjust filename to be unique for each asset, if necessary.
-            // For now, using original filename or a generic one.
             const filename = asset.fileName || `image-${index}.jpg`;
             formData.append('images', {
                 uri: asset.uri,
                 name: filename,
-                type: asset.mimeType || 'image/jpeg', // Default to jpeg if mimeType is not available
+                type: asset.mimeType || 'image/jpeg', 
             });
         });
 
@@ -200,8 +198,6 @@ export default function AddEvidenceScreen({ navigation, route }) {
         if (success) {
             navigation.navigate('ComplaintDetails', {
                 id: complaintId,
-                // No longer passing newEvidenceImages here if backend re-fetches
-                // But keeping it for immediate display if re-fetch is not instant
                 newEvidenceImages: selectedImages,
             });
         }
@@ -221,30 +217,55 @@ export default function AddEvidenceScreen({ navigation, route }) {
         }
     };
 
+    if (!permission) {
+        return <View style={styles.container} />;
+    }
+
+    if (!permission.granted) {
+        return (
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <ChevronLeft size={24} color="white" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerText}>Add Evidence</Text>
+                </View>
+                <View style={styles.permissionContainer}>
+                    <Text style={styles.message}>We need your permission to show the camera</Text>
+                    <TouchableOpacity onPress={requestPermission} style={styles.permissionButton}>
+                        <Text style={styles.permissionButtonText}>Grant Permission</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
+
+    const previewUri = selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null;
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <ArrowLeft size={24} color="white" />
+                    <ChevronLeft size={24} color="white" />
                 </TouchableOpacity>
                 <Text style={styles.headerText}>Add Evidence</Text>
             </View>
 
             <View style={styles.cameraContainer}>
-                {selectedImages.length > 0 ? (
+                {previewUri ? (
                     <View style={styles.mainImagePreviewWrapper}>
-                        <Image source={{ uri: selectedImages[selectedImages.length - 1] }} style={styles.mainPreviewImage} />
+                        <Image source={{ uri: previewUri }} style={styles.mainPreviewImage} />
 
                         {/* AI Verdict badge on main image */}
-                        {verificationResults[selectedImages[selectedImages.length - 1]] && (() => {
-                            const v = getVerdictStyle(verificationResults[selectedImages[selectedImages.length - 1]].verdict);
+                        {verificationResults[previewUri] && (() => {
+                            const v = getVerdictStyle(verificationResults[previewUri].verdict);
                             if (!v) return null;
                             const IconComp = v.icon;
                             return (
                                 <View style={[styles.verdictBadge, { backgroundColor: v.bg }]}>
                                     <IconComp size={14} color={v.color} />
                                     <Text style={[styles.verdictText, { color: v.color }]}>
-                                        AI: {v.label} ({verificationResults[selectedImages[selectedImages.length - 1]].confidence}%)
+                                        AI: {v.label} ({verificationResults[previewUri].confidence}%)
                                     </Text>
                                 </View>
                             );
@@ -254,7 +275,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
                         {selectedImages.length > 1 && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailStrip}>
                                 {selectedImages.map((uri, index) => (
-                                    <TouchableOpacity key={index} onPress={() => { /* Option to make this the main image, or just show */ }}>
+                                    <TouchableOpacity key={index} onPress={() => { /* Option to make this the main image */ }}>
                                         <View>
                                             <Image source={{ uri }} style={[
                                                 styles.thumbnailImage,
@@ -266,12 +287,25 @@ export default function AddEvidenceScreen({ navigation, route }) {
                                 ))}
                             </ScrollView>
                         )}
-                        <TouchableOpacity style={styles.removeMainImageButton} onPress={() => removeImage(selectedImages[selectedImages.length - 1])}>
-                            <X size={20} color="white" />
-                        </TouchableOpacity>
                     </View>
                 ) : (
-                    <Text style={styles.placeholderText}>Take or Upload Photo</Text>
+                    <CameraView 
+                        style={styles.camera} 
+                        ref={cameraRef}
+                        facing="back"
+                    >
+                        {isCapturing && (
+                            <View style={styles.loadingOverlay}>
+                                <ActivityIndicator size="large" color="white" />
+                                <Text style={styles.loadingText}>Capturing...</Text>
+                            </View>
+                        )}
+                        {selectedImages.length > 0 && !isCapturing && (
+                            <View style={styles.badgeContainer}>
+                                <Text style={styles.badgeText}>{selectedImages.length} Captured</Text>
+                            </View>
+                        )}
+                    </CameraView>
                 )}
             </View>
 
@@ -295,23 +329,65 @@ export default function AddEvidenceScreen({ navigation, route }) {
             )}
 
             <View style={styles.footer}>
-                <TouchableOpacity onPress={handleLibraryPick} style={styles.galleryButton} disabled={isVerifying || isUploading}>
-                    <GalleryIcon size={32} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleImagePick} style={styles.cameraButton} disabled={isVerifying || isUploading}>
-                    <Camera size={40} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.addButton, (selectedImages.length === 0 || isVerifying || isUploading) && { opacity: 0.5 }]}
-                    onPress={handleAddEvidence}
-                    disabled={selectedImages.length === 0 || isUploading || isVerifying}
-                >
-                    {isUploading || isVerifying ? (
-                        <ActivityIndicator size="small" color="#1E88E5" />
-                    ) : (
-                        <Text style={styles.addButtonText}>Add Evidence</Text>
-                    )}
-                </TouchableOpacity>
+                {!previewUri ? (
+                    <>
+                        <View style={styles.sideButtonContainer} />
+                        
+                        <View style={styles.cameraButtonContainer}>
+                            <TouchableOpacity 
+                                onPress={takePicture} 
+                                style={[styles.cameraButton, (isVerifying || isUploading || isCapturing) && styles.disabledButton]}
+                                disabled={isVerifying || isUploading || isCapturing}
+                            >
+                                <View style={styles.innerCameraButton} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.sideButtonContainer}>
+                            <TouchableOpacity 
+                                onPress={handleLibraryPick} 
+                                style={styles.sideButton}
+                                disabled={isVerifying || isUploading || isCapturing}
+                            >
+                                <GalleryIcon size={30} color="white" />
+                                <Text style={styles.sideButtonText}>Offline Gallery</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                ) : (
+                    <View style={styles.actionButtonContainer}>
+                        <TouchableOpacity 
+                            onPress={() => removeImage(previewUri)} 
+                            style={styles.actionButton}
+                            disabled={isVerifying || isUploading}
+                        >
+                            <RefreshCcw size={30} color="white" />
+                            <Text style={styles.sideButtonText}>Retake</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                            onPress={() => setSelectedImages(prev => prev.slice(0, -1))} // Just hide preview to show camera
+                            style={styles.actionButton}
+                            disabled={isVerifying || isUploading}
+                        >
+                            <Camera size={30} color="white" />
+                            <Text style={styles.sideButtonText}>Add More</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            onPress={handleAddEvidence} 
+                            style={styles.actionButton}
+                            disabled={isVerifying || isUploading}
+                        >
+                            {isUploading || isVerifying ? (
+                                <ActivityIndicator size="small" color="white" />
+                            ) : (
+                                <ArrowRight size={30} color="white" />
+                            )}
+                            <Text style={styles.sideButtonText}>Submit</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </View>
     );
@@ -320,63 +396,50 @@ export default function AddEvidenceScreen({ navigation, route }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'white',
+        backgroundColor: '#000',
     },
     header: {
-        height: 120,
+        height: 100,
         backgroundColor: '#1E88E5',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 20,
-        flexDirection: 'row',
+        paddingTop: 40,
+        position: 'relative',
     },
     backButton: {
         position: 'absolute',
         left: 20,
-        top: 60, // Adjust as needed
+        top: 55,
         zIndex: 1,
     },
     headerText: {
         fontSize: 20,
         fontWeight: 'bold',
-        textAlign: 'center',
         color: 'white',
-        marginTop: 20,
     },
     cameraContainer: {
         flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: '#000',
+        overflow: 'hidden',
     },
-    placeholderText: {
-        fontSize: 18,
-        color: '#A0A0A0',
+    camera: {
+        flex: 1,
     },
     mainImagePreviewWrapper: {
-        flex: 1, // Take up available space
+        flex: 1,
         width: '100%',
         position: 'relative',
     },
     mainPreviewImage: {
-        width: '100%',
-        height: '100%',
-        resizeMode: 'cover', // Or 'contain' depending on preference, 'cover' is more like CameraScreen
-    },
-    removeMainImageButton: {
-        position: 'absolute',
-        top: 20,
-        right: 20,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        borderRadius: 20,
-        padding: 8,
-        zIndex: 1,
+        flex: 1,
+        resizeMode: 'contain',
     },
     thumbnailStrip: {
         position: 'absolute',
-        bottom: 0,
+        bottom: 20,
         left: 0,
         right: 0,
-        height: 80, // Height for thumbnail strip
+        height: 80,
         backgroundColor: 'rgba(0,0,0,0.5)',
         alignItems: 'center',
         paddingHorizontal: 10,
@@ -435,30 +498,106 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     footer: {
-        height: 100,
+        height: 120,
         backgroundColor: '#1E88E5',
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
+        paddingBottom: 20,
+    },
+    sideButtonContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cameraButtonContainer: {
+        width: 100,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    actionButtonContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-around',
-        paddingHorizontal: 20,
+    },
+    actionButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     cameraButton: {
-        backgroundColor: '#1E88E5',
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        borderWidth: 5,
+        borderColor: 'rgba(255,255,255,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    innerCameraButton: {
+        width: 60,
+        height: 60,
         borderRadius: 30,
-        padding: 10,
-        borderWidth: 2,
+        backgroundColor: 'white',
+    },
+    sideButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sideButtonText: {
+        color: 'white',
+        fontSize: 12,
+        marginTop: 4,
+    },
+    disabledButton: {
+        opacity: 0.5,
+    },
+    permissionContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    message: {
+        textAlign: 'center',
+        paddingBottom: 20,
+        color: 'white',
+        fontSize: 16,
+    },
+    permissionButton: {
+        backgroundColor: '#1E88E5',
+        padding: 15,
+        borderRadius: 10,
+        borderWidth: 1,
         borderColor: 'white',
     },
-    galleryButton: {},
-    addButton: {
-        backgroundColor: 'white',
-        borderRadius: 25,
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-    },
-    addButtonText: {
-        color: '#1E88E5',
-        fontSize: 16,
+    permissionButtonText: {
+        color: 'white',
         fontWeight: 'bold',
     },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        color: 'white',
+        marginTop: 10,
+        fontSize: 16,
+    },
+    badgeContainer: {
+        position: 'absolute',
+        top: 20,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    badgeText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 12,
+    }
 });

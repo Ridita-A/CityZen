@@ -219,6 +219,10 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
   const [reportReason, setReportReason] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [showGuestFabHint, setShowGuestFabHint] = useState(true);
+
+  const guestFabFloat = useRef(new Animated.Value(0)).current;
+  const guestFabPulse = useRef(new Animated.Value(0)).current;
 
   const REPORT_REASONS = [
     { key: 'harassment_threats', label: 'Harassment & Threats' },
@@ -394,6 +398,48 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
     return unsubscribe;
   }, [navigation, fetchComplaints]);
 
+  useEffect(() => {
+    if (userData) {
+      setShowGuestFabHint(false);
+      return undefined;
+    }
+
+    setShowGuestFabHint(true);
+
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(guestFabFloat, {
+          toValue: -7,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(guestFabFloat, {
+          toValue: 0,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const pulseLoop = Animated.loop(
+      Animated.timing(guestFabPulse, {
+        toValue: 1,
+        duration: 1400,
+        useNativeDriver: true,
+      })
+    );
+
+    floatLoop.start();
+    pulseLoop.start();
+
+    return () => {
+      floatLoop.stop();
+      pulseLoop.stop();
+      guestFabFloat.setValue(0);
+      guestFabPulse.setValue(0);
+    };
+  }, [userData, guestFabFloat, guestFabPulse]);
+
   // Filter complaints by search query and status
   const filteredComplaints = complaints.filter(complaint => {
     const matchesSearch = complaint.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -523,6 +569,14 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
     } finally {
       setReportSubmitting(false);
     }
+  };
+
+  const showGuestQuickTour = () => {
+    Alert.alert(
+      'Quick Overview',
+      '1. Browse nearby complaints and check live status updates.\n2. Double-tap an image or tap the heart to upvote issues.\n3. Use Filters to narrow by distance, category, date, and status.\n4. Tap the camera button to start reporting with photo + location.\n5. Create an account to submit reports, add evidence, and track progress.',
+      [{ text: 'Got it' }]
+    );
   };
 
   return (
@@ -835,21 +889,68 @@ export default function FeedScreen({ navigation, onLogout, darkMode, toggleDarkM
 
       {/* Guest Submit FAB */}
       {!userData && (
-        <TouchableOpacity
-          style={styles.guestFab}
-          onPress={() => {
-            Alert.alert(
-              'Submit a Complaint',
-              'Start reporting an issue in your city. You\'ll need to login before final submission.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Get Started', onPress: () => navigation.navigate('Camera') }
-              ]
-            );
-          }}
-        >
-          <Camera size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.guestTutorialWrap} pointerEvents="box-none">
+          {showGuestFabHint && (
+            <Animated.View
+              style={[
+                styles.guestHintBubble,
+                darkMode && styles.guestHintBubbleDark,
+                { transform: [{ translateY: guestFabFloat }] },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  setShowGuestFabHint(false);
+                  showGuestQuickTour();
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={[styles.guestHintText, darkMode && styles.guestHintTextDark]}>
+                  Tap camera to start your first report
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          <Animated.View style={{ transform: [{ translateY: guestFabFloat }] }}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.guestFabPulse,
+                {
+                  transform: [
+                    {
+                      scale: guestFabPulse.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.45],
+                      }),
+                    },
+                  ],
+                  opacity: guestFabPulse.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.35, 0],
+                  }),
+                },
+              ]}
+            />
+            <TouchableOpacity
+              style={styles.guestFab}
+              onPress={() => {
+                setShowGuestFabHint(false);
+                Alert.alert(
+                  'Submit a Complaint',
+                  'Start reporting an issue in your city. You\'ll need to login before final submission.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Get Started', onPress: () => navigation.navigate('Camera') }
+                  ]
+                );
+              }}
+            >
+              <Camera size={24} color="white" />
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
       )}
     </View>
   );
@@ -1053,10 +1154,50 @@ const styles = StyleSheet.create({
     marginTop: -40,
     opacity: 0.9
   },
-  guestFab: {
+  guestTutorialWrap: {
     position: 'absolute',
-    bottom: 30,
     right: 20,
+    bottom: 30,
+    alignItems: 'flex-end',
+  },
+  guestHintBubble: {
+    maxWidth: 220,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  guestHintBubbleDark: {
+    backgroundColor: '#1F2937',
+    borderColor: '#374151',
+  },
+  guestHintText: {
+    color: '#1E88E5',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  guestHintTextDark: {
+    color: '#D1D5DB',
+  },
+  guestFabPulse: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#1E88E5',
+  },
+  guestFab: {
     width: 60,
     height: 60,
     borderRadius: 30,

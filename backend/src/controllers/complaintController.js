@@ -1,4 +1,91 @@
 const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, ComplaintBump, sequelize, User, Citizen } = require('../models');
+// DEPARTMENT PERFORMANCE STATS
+exports.getDepartmentPerformanceStats = async (_req, res) => {
+  try {
+    // Get all departments
+    const departments = await AuthorityCompany.findAll({ attributes: ['id', 'name', 'description'] });
+    // For each department, count active and resolved complaints
+    const stats = await Promise.all(departments.map(async (dept) => {
+      // Complaints assigned to this department
+      const active = await Complaint.count({
+        include: [{ model: AuthorityCompany, where: { id: dept.id } }],
+        where: { currentStatus: { [Op.in]: ['pending', 'accepted', 'in_progress'] } }
+      });
+      const resolved = await Complaint.count({
+        include: [{ model: AuthorityCompany, where: { id: dept.id } }],
+        where: { currentStatus: 'resolved' }
+      });
+      const total = active + resolved;
+      let perf, color;
+      if (total > 0) {
+        perf = Math.round((resolved / total) * 100) + '%';
+        color = '#1E88E5'; // normal color
+      } else {
+        perf = 'N/A';
+        color = '#9CA3AF'; // grey
+      }
+      return {
+        id: dept.id,
+        name: dept.name,
+        active,
+        resolved,
+        perf,
+        color,
+      };
+    }));
+    res.json(stats);
+  } catch (error) {
+    console.error('Get Department Performance Stats Error:', error.message);
+    res.status(500).json({ message: 'Server error while fetching department performance stats.' });
+  }
+};
+// UPDATE CATEGORY DEPARTMENTS
+exports.updateCategoryDepartments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let departmentIds = req.body?.departmentId;
+    if (typeof departmentIds === 'string') {
+      try {
+        departmentIds = JSON.parse(departmentIds);
+      } catch {
+        departmentIds = [departmentIds];
+      }
+    }
+    if (!Array.isArray(departmentIds)) {
+      departmentIds = departmentIds ? [departmentIds] : [];
+    }
+    const category = await Category.findByPk(id);
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found.' });
+    }
+    // Remove existing associations
+    await category.setAuthorityCompanies([]);
+    // Add new associations
+    if (departmentIds.length > 0) {
+      const departments = await AuthorityCompany.findAll({ where: { id: departmentIds } });
+      await category.addAuthorityCompanies(departments);
+    }
+    // Fetch updated category with departments
+    const updatedCategory = await Category.findByPk(id, {
+      attributes: ['id', 'name', 'description'],
+      include: [
+        {
+          model: AuthorityCompany,
+          attributes: ['id', 'name', 'description'],
+          through: { attributes: [] },
+        },
+      ],
+    });
+    return res.json({
+      message: 'Category departments updated successfully.',
+      category: updatedCategory,
+    });
+  } catch (error) {
+    console.error('Update Category Departments Error:', error.message);
+    res.status(500).json({ message: 'Server error while updating category departments.' });
+  }
+};
+const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, sequelize, User, Citizen } = require('../models');
 const { Op } = require('sequelize');
 const supabase = require('../config/supabase'); // Import Supabase client
 const axios = require('axios');
@@ -596,6 +683,13 @@ exports.getCategories = async (req, res) => {
   try {
     const categories = await Category.findAll({
       attributes: ['id', 'name', 'description'],
+      include: [
+        {
+          model: AuthorityCompany,
+          attributes: ['id', 'name', 'description'],
+          through: { attributes: [] }, // Exclude join table fields
+        },
+      ],
     });
     res.json(categories);
   } catch (error) {
@@ -748,6 +842,18 @@ exports.createCategory = async (req, res) => {
   try {
     const name = req.body?.name?.trim();
     const description = req.body?.description?.trim();
+    // Accept departmentId (single or array)
+    let departmentIds = req.body?.departmentId;
+    if (typeof departmentIds === 'string') {
+      try {
+        departmentIds = JSON.parse(departmentIds);
+      } catch {
+        departmentIds = [departmentIds];
+      }
+    }
+    if (!Array.isArray(departmentIds)) {
+      departmentIds = departmentIds ? [departmentIds] : [];
+    }
 
     if (!name) {
       return res.status(400).json({ message: 'Category name is required.' });
@@ -758,9 +864,30 @@ exports.createCategory = async (req, res) => {
       defaults: { description },
     });
 
+    // If new or existing, update department associations if provided
+    if (departmentIds.length > 0) {
+      // Remove existing associations if any
+      await category.setAuthorityCompanies([]);
+      // Add new associations
+      const departments = await AuthorityCompany.findAll({ where: { id: departmentIds } });
+      await category.addAuthorityCompanies(departments);
+    }
+
+    // Fetch with departments for response
+    const categoryWithDepartments = await Category.findByPk(category.id, {
+      attributes: ['id', 'name', 'description'],
+      include: [
+        {
+          model: AuthorityCompany,
+          attributes: ['id', 'name', 'description'],
+          through: { attributes: [] },
+        },
+      ],
+    });
+
     return res.status(created ? 201 : 200).json({
       message: created ? 'Category created successfully.' : 'Category already exists.',
-      category,
+      category: categoryWithDepartments,
     });
   } catch (error) {
     console.error('Create Category Error:', error.message);
@@ -800,10 +927,17 @@ exports.getDepartments = async (_req, res) => {
   try {
     const departments = await AuthorityCompany.findAll({
       attributes: ['id', 'name', 'description'],
-      include: [{
-        model: sequelize.models.AuthorityCompanyAreas,
-        attributes: ['id', 'name', 'latitude', 'longitude', 'radius']
-      }],
+      include: [
+        {
+          model: sequelize.models.AuthorityCompanyAreas,
+          attributes: ['id', 'name', 'latitude', 'longitude', 'radius']
+        },
+        {
+          model: sequelize.models.Category,
+          attributes: ['id', 'name', 'description'],
+          through: { attributes: [] },
+        }
+      ],
       order: [['name', 'ASC']]
     });
     res.json(departments);

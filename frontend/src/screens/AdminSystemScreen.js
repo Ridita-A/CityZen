@@ -10,6 +10,10 @@ export default function AdminSystemScreen({ darkMode }) {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newCategory, setNewCategory] = useState('');
+  const [newCategoryDept, setNewCategoryDept] = useState([]);
+  const [editDeptModalVisible, setEditDeptModalVisible] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingCategoryDept, setEditingCategoryDept] = useState([]);
   
   // Department form state
   const [deptModalVisible, setDeptModalVisible] = useState(false);
@@ -60,13 +64,44 @@ export default function AdminSystemScreen({ darkMode }) {
       Alert.alert('Missing info', 'Please enter a category name.');
       return;
     }
+    if (!newCategoryDept.length) {
+      Alert.alert('Missing info', 'Please select at least one department for the new category.');
+      return;
+    }
     try {
       setIsSubmitting(true);
-      await api.post('/complaints/categories', { name: value });
+      await api.post('/complaints/categories', { name: value, departmentId: newCategoryDept });
       setNewCategory('');
+      setNewCategoryDept([]);
       await fetchCategories();
     } catch (error) {
       Alert.alert('Error', error.response?.data?.message || 'Unable to save.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditDeptModal = (category) => {
+    setEditingCategory(category);
+    setEditingCategoryDept(Array.isArray(category.AuthorityCompanies) ? category.AuthorityCompanies.map(ac => ac.id) : []);
+    setEditDeptModalVisible(true);
+  };
+
+  const closeEditDeptModal = () => {
+    setEditDeptModalVisible(false);
+    setEditingCategory(null);
+    setEditingCategoryDept(null);
+  };
+
+  const handleUpdateCategoryDept = async () => {
+    if (!editingCategory || !editingCategoryDept.length) return;
+    try {
+      setIsSubmitting(true);
+      await api.put(`/complaints/categories/${editingCategory.id}/departments`, { departmentId: editingCategoryDept });
+      await fetchCategories();
+      closeEditDeptModal();
+    } catch (error) {
+      Alert.alert('Error', error.response?.data?.message || 'Unable to update department.');
     } finally {
       setIsSubmitting(false);
     }
@@ -221,6 +256,22 @@ export default function AdminSystemScreen({ darkMode }) {
               onChangeText={(t) => setDeptForm(p => ({...p, description: t}))}
             />
 
+            {/* Handles section: always rendered */}
+            <View style={{ marginTop: 18 }}>
+              <Text style={[styles.fieldLabel, darkMode && {color: '#9CA3AF'}]}>Handles</Text>
+              {editingDept && editingDept.Categories && editingDept.Categories.length > 0 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+                  {editingDept.Categories.map(cat => (
+                    <View key={cat.id} style={{ backgroundColor: '#F3F4F6', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6, marginRight: 6 }}>
+                      <Text style={{ color: darkMode ? 'white' : '#1E293B', fontSize: 13 }}>{cat.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 4 }}>No issues assigned</Text>
+              )}
+            </View>
+
             {/* Service Areas */}
             <View style={styles.sectionHeader}>
               <MapPin color="#F59E0B" size={18} />
@@ -343,12 +394,20 @@ export default function AdminSystemScreen({ darkMode }) {
       {loading ? (
         <ActivityIndicator color="#1E88E5" />
       ) : (
-        <FlatList 
+        <FlatList
           data={categories}
           keyExtractor={(item) => String(item?.id || item?.name)}
           renderItem={({ item }) => (
             <View style={[styles.listItem, darkMode && styles.cardDark]}>
-              <Text style={[styles.itemText, darkMode && {color: 'white'}]}>{item?.name || item}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.itemText, darkMode && {color: 'white'}]}>{item?.name || item}</Text>
+                <Text style={{ color: '#9CA3AF', fontSize: 12 }}>
+                  Dept: {item.AuthorityCompanies && item.AuthorityCompanies.length > 0 ? item.AuthorityCompanies.map(ac => ac.name).join(', ') : 'None assigned'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => openEditDeptModal(item)} style={{ marginLeft: 10 }}>
+                <Edit2 color="#1E88E5" size={18} />
+              </TouchableOpacity>
             </View>
           )}
           ListEmptyComponent={<Text style={[styles.emptyText, darkMode && {color: 'white'}]}>No items yet.</Text>}
@@ -363,14 +422,74 @@ export default function AdminSystemScreen({ darkMode }) {
                   value={newCategory}
                   onChangeText={setNewCategory}
                 />
-                <TouchableOpacity style={styles.addBtn} onPress={handleAddCategory} disabled={isSubmitting}>
-                  {isSubmitting ? <ActivityIndicator color="white" /> : <Plus color="white" size={16} />}
-                </TouchableOpacity>
               </View>
+              <View style={{ marginTop: 10 }}>
+                <Text style={[styles.fieldLabel, darkMode && {color: '#9CA3AF'}]}>Assign Departments *</Text>
+                <View style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, backgroundColor: darkMode ? '#111827' : '#F3F4F6' }}>
+                  {depts.map((dept) => {
+                    const selected = Array.isArray(newCategoryDept) && newCategoryDept.includes(dept.id);
+                    return (
+                      <TouchableOpacity
+                        key={dept.id}
+                        style={{ padding: 10, backgroundColor: selected ? '#1E88E5' : 'transparent' }}
+                        onPress={() => {
+                          setNewCategoryDept(prev => {
+                            if (!Array.isArray(prev)) return [dept.id];
+                            return selected ? prev.filter(id => id !== dept.id) : [...prev, dept.id];
+                          });
+                        }}
+                      >
+                        <Text style={{ color: selected ? 'white' : (darkMode ? 'white' : 'black') }}>{dept.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+              <TouchableOpacity style={[styles.addBtn, { marginTop: 10 }]} onPress={handleAddCategory} disabled={isSubmitting}>
+                {isSubmitting ? <ActivityIndicator color="white" /> : <Plus color="white" size={16} />}
+              </TouchableOpacity>
             </View>
           }
         />
       )}
+      {/* Edit Department Modal for Category */}
+      <Modal visible={editDeptModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, darkMode && styles.cardDark]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, darkMode && {color: 'white'}]}>Assign Department</Text>
+              <TouchableOpacity onPress={closeEditDeptModal}><X color={darkMode ? 'white' : 'black'} size={24} /></TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              {depts.map((dept) => {
+                const selected = Array.isArray(editingCategoryDept) && editingCategoryDept.includes(dept.id);
+                return (
+                  <TouchableOpacity
+                    key={dept.id}
+                    style={{ padding: 10, backgroundColor: selected ? '#1E88E5' : 'transparent', borderRadius: 8, marginBottom: 6 }}
+                    onPress={() => {
+                      setEditingCategoryDept(prev => {
+                        if (!Array.isArray(prev)) return [dept.id];
+                        return selected ? prev.filter(id => id !== dept.id) : [...prev, dept.id];
+                      });
+                    }}
+                  >
+                    <Text style={{ color: selected ? 'white' : (darkMode ? 'white' : 'black') }}>{dept.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={closeEditDeptModal}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, isSubmitting && {opacity: 0.6}]} onPress={handleUpdateCategoryDept} disabled={isSubmitting}>
+                {isSubmitting ? <ActivityIndicator color="white" /> : <Text style={styles.saveBtnText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 
@@ -386,6 +505,7 @@ export default function AdminSystemScreen({ darkMode }) {
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => {
             const areaCount = item.AuthorityCompanyAreas?.length || 0;
+            const issueCount = item.Categories?.length || 0;
             return (
               <TouchableOpacity style={[styles.deptCard, darkMode && styles.cardDark]} onPress={() => openDeptModal(item)}>
                 <View style={{flex: 1}}>
@@ -395,7 +515,9 @@ export default function AdminSystemScreen({ darkMode }) {
                   ) : null}
                   <View style={styles.areaTag}>
                     <MapPin size={12} color="#F59E0B" />
-                    <Text style={styles.areaTagText}>{areaCount} area{areaCount !== 1 ? 's' : ''}</Text>
+                    <Text style={styles.areaTagText}>
+                      {areaCount} area{areaCount !== 1 ? 's' : ''} • {issueCount} categor{issueCount === 1 ? 'y' : 'ies'}
+                    </Text>
                   </View>
                 </View>
                 <Edit2 color="#9CA3AF" size={18} />

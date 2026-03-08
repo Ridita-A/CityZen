@@ -40,6 +40,7 @@ const NavigationAware = () => {
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
+import EmailOtpScreen from './src/screens/EmailOtpScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -105,6 +106,12 @@ export default function App() {
               options={{ animation: 'slide_from_bottom' }}
             >
               {(props) => <SignupScreen {...props} onSignup={() => props.navigation.replace('HomeScreen')} />}
+            </Stack.Screen>
+            <Stack.Screen
+              name="EmailOtp"
+              options={{ animation: 'slide_from_right' }}
+            >
+              {(props) => <EmailOtpScreen {...props} />}
             </Stack.Screen>
             <Stack.Screen name="HomeScreen">{(props) => <HomeScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>
             <Stack.Screen name="Feed">{(props) => <FeedScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onLogout={() => props.navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] })} />}</Stack.Screen>

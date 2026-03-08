@@ -3,6 +3,7 @@ const User = require('./User');
 const Citizen = require('./Citizen');
 const Authority = require('./Authority');
 const Admin = require('./Admin');
+const Otp = require('./Otp'); // New: OTP model
 const Complaint = require('./Complaint');
 const Category = require('./Category');
 const AuthorityCompany = require('./AuthorityCompany');
@@ -127,6 +128,7 @@ Complaint.belongsTo(PendingCategoryRequest, { foreignKey: 'pendingCategoryReques
 
 
 module.exports = {
+  Otp,
   sequelize,
   User,
   Citizen,

@@ -52,6 +52,9 @@ router.get('/complaints/appeals', complaintController.getAppeals);
 // Update appeal status (Admin)
 router.patch('/complaints/appeals/:id', complaintController.updateAppealStatus);
 
+// Download generated misconduct report PDF
+router.get('/complaints/:id/misconduct-report/download', complaintController.downloadMisconductReport);
+
 // Get complaint by ID
 router.get('/complaints/:id', complaintController.getComplaintById);
 

@@ -37,7 +37,7 @@ const Complaint = sequelize.define('Complaint', {
     allowNull: false,
   },
   currentStatus: {
-    type: DataTypes.ENUM('draft', 'pending', 'accepted', 'in_progress', 'resolved', 'appealed', 'completed', 'rejected'),
+    type: DataTypes.ENUM('draft', 'pending', 'accepted', 'in_progress', 'resolved', 'appealed', 'completed', 'rejected', 'critical_failure'),
     allowNull: false
   },
   upvotes: {
@@ -65,6 +65,46 @@ const Complaint = sequelize.define('Complaint', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  escalationLevel: {
+    type: DataTypes.ENUM('none', 'track_a', 'track_b', 'both'),
+    defaultValue: 'none'
+  },
+  escalatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  adminDeadlineAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  adminDeadlineStatus: {
+    type: DataTypes.ENUM('none', 'active', 'cleared', 'missed'),
+    defaultValue: 'none'
+  },
+  responseDelayWarningLogged: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  trackAAlertedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  trackBAlertedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  criticalFailureAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  misconductReportPath: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  misconductReportGeneratedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
   adminRemarks: {
     type: DataTypes.TEXT,
     allowNull: true
@@ -72,6 +112,10 @@ const Complaint = sequelize.define('Complaint', {
   lastBumpedAt: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  bumpCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
   },
   priorityScore: {
     type: DataTypes.INTEGER,

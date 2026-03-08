@@ -11,7 +11,7 @@ import api from '../services/api';
 
 const screenWidth = Dimensions.get('window').width;
 
-export default function AuthorityAnalyticsScreen({ navigation: navigationProp }) {
+export default function AuthorityAnalyticsScreen({ navigation: navigationProp, darkMode = false }) {
 	const navigation = navigationProp || useNavigation();
 	const MAP_LAYER_OPTIONS = [
 		{ key: 'all', label: 'All' },
@@ -292,6 +292,19 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 		datasets: [{ data: [metrics.pending, metrics.accepted, metrics.inProgress, metrics.resolved, metrics.appealed] }]
 	};
 
+	const themedChartConfig = useMemo(() => ({
+		...chartConfig,
+		backgroundColor: darkMode ? '#111827' : '#FFFFFF',
+		backgroundGradientFrom: darkMode ? '#111827' : '#FFFFFF',
+		backgroundGradientTo: darkMode ? '#111827' : '#FFFFFF',
+		color: (opacity = 1) => darkMode
+			? `rgba(96, 165, 250, ${opacity})`
+			: `rgba(30, 136, 229, ${opacity})`,
+		labelColor: (opacity = 1) => darkMode
+			? `rgba(209, 213, 219, ${opacity})`
+			: `rgba(75, 85, 99, ${opacity})`,
+	}), [darkMode]);
+
 	const complaintsForMapLayer = useMemo(() => {
 		const resolvedStatuses = new Set(['resolved', 'closed', 'completed']);
 		const activeStatuses = new Set(['pending', 'accepted', 'in_progress', 'assigned', 'appealed']);
@@ -358,38 +371,38 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 	}, [showMap, markerPoints]);
 
 	return (
-		<ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+		<ScrollView style={[styles.container, darkMode && styles.containerDark]} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
 			{/* Improved Header */}
-			<View style={styles.header}>
+			<View style={[styles.header, darkMode && styles.headerDark]}>
 				<View>
-					<Text style={styles.headerSubtitle}>Performance Overview</Text>
-					<Text style={styles.headerTitle}>Analytics</Text>
+					<Text style={[styles.headerSubtitle, darkMode && styles.textGray]}>Performance Overview</Text>
+					<Text style={[styles.headerTitle, darkMode && styles.textWhite]}>Analytics</Text>
 				</View>
-				<TouchableOpacity onPress={() => setShowExportModal(true)} style={styles.iconButton}>
+				<TouchableOpacity onPress={() => setShowExportModal(true)} style={[styles.iconButton, darkMode && styles.iconButtonDark]}>
 					<Download size={22} color="#1E88E5" />
 				</TouchableOpacity>
 			</View>
 
 			{/* Aligned Filter Chips - Non-scrollable Row */}
-			<View style={styles.filterSection}>
+			<View style={[styles.filterSection, darkMode && styles.filterSectionDark]}>
 				<View style={styles.filterRow}>
 					{['all', 'week'].map(period => (
 						<TouchableOpacity
 							key={period}
-							style={[styles.chip, selectedPeriod === period && styles.chipActive]}
+							style={[styles.chip, darkMode && styles.chipDark, selectedPeriod === period && styles.chipActive]}
 							onPress={() => setSelectedPeriod(period)}
 						>
-							<Text style={[styles.chipText, selectedPeriod === period && styles.chipTextActive]}>
+							<Text style={[styles.chipText, darkMode && styles.chipTextDark, selectedPeriod === period && styles.chipTextActive]}>
 								{period === 'all' ? 'All Time' : '7 Days'}
 							</Text>
 						</TouchableOpacity>
 					))}
 					<TouchableOpacity
-						style={[styles.chip, { flex: 1.5 }, (selectedPeriod === 'month' || selectedPeriod === 'year') && styles.chipActive]}
+						style={[styles.chip, darkMode && styles.chipDark, { flex: 1.5 }, (selectedPeriod === 'month' || selectedPeriod === 'year') && styles.chipActive]}
 						onPress={() => setShowFilterModal(true)}
 					>
-						<Calendar size={14} color={selectedPeriod === 'month' || selectedPeriod === 'year' ? "#FFF" : "#6B7280"} style={{ marginRight: 6 }} />
-						<Text style={[styles.chipText, (selectedPeriod === 'month' || selectedPeriod === 'year') && styles.chipTextActive]} numberOfLines={1}>
+						<Calendar size={14} color={selectedPeriod === 'month' || selectedPeriod === 'year' ? "#FFF" : darkMode ? '#D1D5DB' : "#6B7280"} style={{ marginRight: 6 }} />
+						<Text style={[styles.chipText, darkMode && styles.chipTextDark, (selectedPeriod === 'month' || selectedPeriod === 'year') && styles.chipTextActive]} numberOfLines={1}>
 							{selectedPeriod === 'month' ? `${months[selectedMonth].substring(0, 3)} ${selectedYear}` :
 								selectedPeriod === 'year' ? `${selectedYear}` : 'Custom'}
 						</Text>
@@ -401,81 +414,81 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			<View style={styles.metricsGrid}>
 				<MetricCard
 					label="Total Cases" value={metrics.total} color="#3B82F6" loading={loading}
-					onPress={() => openMetricsModal('total')}
+					onPress={() => openMetricsModal('total')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="Resolved" value={metrics.resolved} color="#10B981" loading={loading}
-					onPress={() => openMetricsModal('resolved')}
+					onPress={() => openMetricsModal('resolved')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="Pending" value={metrics.pending} color="#F59E0B" loading={loading}
-					onPress={() => openMetricsModal('pending')}
+					onPress={() => openMetricsModal('pending')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="Appeals" value={metrics.appealed} color="#EF4444" loading={loading}
-					onPress={() => openMetricsModal('appealed')}
+					onPress={() => openMetricsModal('appealed')} darkMode={darkMode}
 				/>
 
 				<MetricCard
 					label="Accepted" value={metrics.accepted} color="#6366F1" loading={loading}
-					onPress={() => openMetricsModal('accepted')}
+					onPress={() => openMetricsModal('accepted')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="In Progress" value={metrics.inProgress} color="#8B5CF6" loading={loading}
-					onPress={() => openMetricsModal('inProgress')}
+					onPress={() => openMetricsModal('inProgress')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="Escalated" value={metrics.escalated} color="#F97316" loading={loading}
-					onPress={() => openMetricsModal('escalated')}
+					onPress={() => openMetricsModal('escalated')} darkMode={darkMode}
 				/>
 				<MetricCard
 					label="Critical Failures" value={metrics.criticalFailures} color="#DC2626" loading={loading}
-					onPress={() => openMetricsModal('criticalFailures')}
+					onPress={() => openMetricsModal('criticalFailures')} darkMode={darkMode}
 				/>
 
 				{/* Secondary Metrics */}
 				<View style={styles.secondaryMetricContainer}>
-					<View style={styles.secondaryCard}>
+					<View style={[styles.secondaryCard, darkMode && styles.secondaryCardDark]}>
 						<TrendingUp size={18} color="#1E88E5" />
 						<View style={{ marginLeft: 10 }}>
-							<Text style={styles.secondaryLabel}>Avg. Resolution</Text>
-							<Text style={styles.secondaryValue}>{metrics.avgResolution}h</Text>
+							<Text style={[styles.secondaryLabel, darkMode && styles.secondaryLabelDark]}>Avg. Resolution</Text>
+							<Text style={[styles.secondaryValue, darkMode && styles.secondaryValueDark]}>{metrics.avgResolution}h</Text>
 						</View>
 					</View>
-					<View style={styles.secondaryCard}>
+					<View style={[styles.secondaryCard, darkMode && styles.secondaryCardDark]}>
 						<CheckCircle size={18} color="#10B981" />
 						<View style={{ marginLeft: 10 }}>
-							<Text style={styles.secondaryLabel}>Citizen Rating</Text>
-							<Text style={styles.secondaryValue}>{metrics.avgRating}/5.0</Text>
+							<Text style={[styles.secondaryLabel, darkMode && styles.secondaryLabelDark]}>Citizen Rating</Text>
+							<Text style={[styles.secondaryValue, darkMode && styles.secondaryValueDark]}>{metrics.avgRating}/5.0</Text>
 						</View>
 					</View>
 				</View>
 				
 				{/* Performance Warning Metrics */}
 				<View style={styles.secondaryMetricContainer}>
-					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+					<View style={[styles.secondaryCard, darkMode && styles.secondaryCardDark, styles.warningCard, darkMode ? styles.warningCardDark : styles.warningCardLight]}>
 						<AlertCircle size={18} color="#DC2626" />
 						<View style={{ marginLeft: 10 }}>
-							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Deadlines Missed</Text>
-							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissed}</Text>
+							<Text style={[styles.secondaryLabel, darkMode ? styles.warningTextDark : styles.warningTextLight]}>Deadlines Missed</Text>
+							<Text style={[styles.secondaryValue, darkMode ? styles.warningTextDark : styles.warningTextLight]}>{metrics.deadlineMissed}</Text>
 						</View>
 					</View>
-					<View style={[styles.secondaryCard, { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
+					<View style={[styles.secondaryCard, darkMode && styles.secondaryCardDark, styles.warningCard, darkMode ? styles.warningCardDark : styles.warningCardLight]}>
 						<Clock size={18} color="#DC2626" />
 						<View style={{ marginLeft: 10 }}>
-							<Text style={[styles.secondaryLabel, { color: '#DC2626' }]}>Delay Rate</Text>
-							<Text style={[styles.secondaryValue, { color: '#DC2626' }]}>{metrics.deadlineMissRate}%</Text>
+							<Text style={[styles.secondaryLabel, darkMode ? styles.warningTextDark : styles.warningTextLight]}>Delay Rate</Text>
+							<Text style={[styles.secondaryValue, darkMode ? styles.warningTextDark : styles.warningTextLight]}>{metrics.deadlineMissRate}%</Text>
 						</View>
 					</View>
 				</View>
 			</View>
 
 			{/* Charts Section */}
-			<View style={styles.sectionCard}>
+			<View style={[styles.sectionCard, darkMode && styles.sectionCardDark]}>
 				<View style={styles.sectionHeader}>
 					<View style={styles.sectionTitleRow}>
 						<BarChart3 size={20} color="#1E88E5" />
-						<Text style={styles.sectionTitle}>Department Workload</Text>
+						<Text style={[styles.sectionTitle, darkMode && styles.textWhite]}>Department Workload</Text>
 					</View>
 					<TouchableOpacity onPress={() => setShowChart(!showChart)}>
 						<Text style={styles.toggleText}>{showChart ? 'Hide' : 'Show'}</Text>
@@ -486,7 +499,7 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 						data={chartData}
 						width={screenWidth - 64}
 						height={200}
-						chartConfig={chartConfig}
+						chartConfig={themedChartConfig}
 						style={styles.chartStyle}
 						fromZero
 						showValuesOnTopOfBars
@@ -495,11 +508,11 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			</View>
 
 			{/* Map Section */}
-			<View style={styles.sectionCard}>
+			<View style={[styles.sectionCard, darkMode && styles.sectionCardDark]}>
 				<View style={styles.sectionHeader}>
 					<View style={styles.sectionTitleRow}>
 						<MapIcon size={18} color="#1E88E5" />
-						<Text style={styles.sectionTitle}>Hotspot by Status Layer</Text>
+						<Text style={[styles.sectionTitle, darkMode && styles.textWhite]}>Hotspot by Status Layer</Text>
 					</View>
 					<TouchableOpacity onPress={() => setShowMap(!showMap)}>
 						<Text style={styles.toggleText}>{showMap ? 'Hide' : 'Show'}</Text>
@@ -510,10 +523,10 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 						{MAP_LAYER_OPTIONS.map((option) => (
 							<TouchableOpacity
 								key={option.key}
-								style={[styles.mapLayerChip, mapLayer === option.key && styles.mapLayerChipActive]}
+								style={[styles.mapLayerChip, darkMode && styles.mapLayerChipDark, mapLayer === option.key && styles.mapLayerChipActive]}
 								onPress={() => setMapLayer(option.key)}
 							>
-								<Text style={[styles.mapLayerChipText, mapLayer === option.key && styles.mapLayerChipTextActive]}>
+								<Text style={[styles.mapLayerChipText, darkMode && styles.mapLayerChipTextDark, mapLayer === option.key && styles.mapLayerChipTextActive]}>
 									{option.label}
 								</Text>
 							</TouchableOpacity>
@@ -542,76 +555,76 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 									pinColor="#1E88E5"
 								/>
 							))}
-						</MapView>
-						{markerPoints.length === 0 && (
-							<View style={styles.mapEmptyState}>
-								<Text style={styles.mapEmptyText}>No valid complaint coordinates found for this filter.</Text>
-							</View>
-						)}
-					</View>
+							</MapView>
+							{markerPoints.length === 0 && (
+								<View style={[styles.mapEmptyState, darkMode && styles.mapEmptyStateDark]}>
+									<Text style={[styles.mapEmptyText, darkMode && styles.textGray]}>No valid complaint coordinates found for this filter.</Text>
+								</View>
+							)}
+						</View>
 				)}
 			</View>
 
 			{/* Filter Modal */}
-			<Modal visible={showFilterModal} transparent animationType="fade">
-				<View style={styles.modalOverlay}>
-					<View style={styles.modalContent}>
-						<View style={styles.modalHeader}>
-							<Text style={styles.modalTitle}>Time Period</Text>
-							<TouchableOpacity onPress={() => setShowFilterModal(false)}>
-								<X size={24} color="#374151" />
-							</TouchableOpacity>
-						</View>
+				<Modal visible={showFilterModal} transparent animationType="fade">
+					<View style={styles.modalOverlay}>
+						<View style={[styles.modalContent, darkMode && styles.modalContentDark]}>
+							<View style={styles.modalHeader}>
+								<Text style={[styles.modalTitle, darkMode && styles.textWhite]}>Time Period</Text>
+								<TouchableOpacity onPress={() => setShowFilterModal(false)}>
+									<X size={24} color={darkMode ? '#F9FAFB' : '#374151'} />
+								</TouchableOpacity>
+							</View>
 
-						<ScrollView showsVerticalScrollIndicator={false}>
-							<Text style={styles.modalLabel}>SELECT TYPE</Text>
-							<View style={styles.filterGrid}>
-								{['month', 'year'].map(p => (
-									<TouchableOpacity
-										key={p}
-										style={[styles.periodChip, selectedPeriod === p && styles.periodChipActive]}
-										onPress={() => setSelectedPeriod(p)}
-									>
-										<Text style={[styles.periodChipText, selectedPeriod === p && styles.periodChipTextActive]}>
-											{p.charAt(0).toUpperCase() + p.slice(1)}
-										</Text>
-									</TouchableOpacity>
+							<ScrollView showsVerticalScrollIndicator={false}>
+								<Text style={[styles.modalLabel, darkMode && styles.modalLabelDark]}>SELECT TYPE</Text>
+								<View style={styles.filterGrid}>
+									{['month', 'year'].map(p => (
+										<TouchableOpacity
+											key={p}
+											style={[styles.periodChip, darkMode && styles.periodChipDark, selectedPeriod === p && styles.periodChipActive]}
+											onPress={() => setSelectedPeriod(p)}
+										>
+											<Text style={[styles.periodChipText, darkMode && styles.periodChipTextDark, selectedPeriod === p && styles.periodChipTextActive]}>
+												{p.charAt(0).toUpperCase() + p.slice(1)}
+											</Text>
+										</TouchableOpacity>
 								))}
 							</View>
 
-							{selectedPeriod === 'month' && (
-								<View style={styles.selectionSection}>
-									<Text style={styles.modalLabel}>SELECT MONTH</Text>
-									<View style={styles.monthGrid}>
-										{months.map((m, idx) => (
-											<TouchableOpacity
-												key={m}
-												style={[styles.monthChip, selectedMonth === idx && styles.monthChipActive]}
-												onPress={() => setSelectedMonth(idx)}
-											>
-												<Text style={[styles.monthChipText, selectedMonth === idx && styles.monthChipTextActive]}>
-													{m.substring(0, 3)}
-												</Text>
-											</TouchableOpacity>
+								{selectedPeriod === 'month' && (
+									<View style={styles.selectionSection}>
+										<Text style={[styles.modalLabel, darkMode && styles.modalLabelDark]}>SELECT MONTH</Text>
+										<View style={styles.monthGrid}>
+											{months.map((m, idx) => (
+												<TouchableOpacity
+													key={m}
+													style={[styles.monthChip, darkMode && styles.monthChipDark, selectedMonth === idx && styles.monthChipActive]}
+													onPress={() => setSelectedMonth(idx)}
+												>
+													<Text style={[styles.monthChipText, darkMode && styles.monthChipTextDark, selectedMonth === idx && styles.monthChipTextActive]}>
+														{m.substring(0, 3)}
+													</Text>
+												</TouchableOpacity>
 										))}
 									</View>
 								</View>
 							)}
 
-							{(selectedPeriod === 'month' || selectedPeriod === 'year') && (
-								<View style={styles.selectionSection}>
-									<Text style={styles.modalLabel}>SELECT YEAR</Text>
-									<View style={styles.filterGrid}>
-										{years.map(y => (
-											<TouchableOpacity
-												key={y}
-												style={[styles.periodChip, selectedYear === y && styles.periodChipActive]}
-												onPress={() => setSelectedYear(y)}
-											>
-												<Text style={[styles.periodChipText, selectedYear === y && styles.periodChipTextActive]}>
-													{y}
-												</Text>
-											</TouchableOpacity>
+								{(selectedPeriod === 'month' || selectedPeriod === 'year') && (
+									<View style={styles.selectionSection}>
+										<Text style={[styles.modalLabel, darkMode && styles.modalLabelDark]}>SELECT YEAR</Text>
+										<View style={styles.filterGrid}>
+											{years.map(y => (
+												<TouchableOpacity
+													key={y}
+													style={[styles.periodChip, darkMode && styles.periodChipDark, selectedYear === y && styles.periodChipActive]}
+													onPress={() => setSelectedYear(y)}
+												>
+													<Text style={[styles.periodChipText, darkMode && styles.periodChipTextDark, selectedYear === y && styles.periodChipTextActive]}>
+														{y}
+													</Text>
+												</TouchableOpacity>
 										))}
 									</View>
 								</View>
@@ -629,18 +642,18 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 			</Modal>
 
 			{/* Export Modal */}
-			<Modal visible={showExportModal} transparent animationType="fade">
-				<View style={styles.modalOverlay}>
-					<View style={styles.modalContent}>
-						<View style={styles.modalHeader}>
-							<Text style={styles.modalTitle}>Export Report</Text>
-							<TouchableOpacity onPress={() => setShowExportModal(false)}>
-								<X size={24} color="#374151" />
-							</TouchableOpacity>
-						</View>
-						<Text style={styles.modalText}>
-							Generate a professional PDF report for <Text style={{ fontWeight: 'bold' }}>{selectedPeriod === 'all' ? 'All Time' : selectedPeriod === 'month' ? `${months[selectedMonth]} ${selectedYear}` : selectedPeriod === 'year' ? `Year ${selectedYear}` : selectedPeriod}</Text>?
-						</Text>
+				<Modal visible={showExportModal} transparent animationType="fade">
+					<View style={styles.modalOverlay}>
+						<View style={[styles.modalContent, darkMode && styles.modalContentDark]}>
+							<View style={styles.modalHeader}>
+								<Text style={[styles.modalTitle, darkMode && styles.textWhite]}>Export Report</Text>
+								<TouchableOpacity onPress={() => setShowExportModal(false)}>
+									<X size={24} color={darkMode ? '#F9FAFB' : '#374151'} />
+								</TouchableOpacity>
+							</View>
+							<Text style={[styles.modalText, darkMode && styles.textGray]}>
+								Generate a professional PDF report for <Text style={{ fontWeight: 'bold' }}>{selectedPeriod === 'all' ? 'All Time' : selectedPeriod === 'month' ? `${months[selectedMonth]} ${selectedYear}` : selectedPeriod === 'year' ? `Year ${selectedYear}` : selectedPeriod}</Text>?
+							</Text>
 						<TouchableOpacity style={styles.applyButton} onPress={generatePDF}>
 							<View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
 								<Download size={20} color="white" />
@@ -655,10 +668,10 @@ export default function AuthorityAnalyticsScreen({ navigation: navigationProp })
 }
 
 // Sub-component for KPI Cards
-const MetricCard = ({ label, value, color, loading, onPress }) => (
-	<TouchableOpacity style={[styles.metricCard, { borderLeftColor: color, borderLeftWidth: 4 }]} onPress={onPress}>
-		<Text style={styles.metricLabel}>{label}</Text>
-		{loading ? <ActivityIndicator size="small" color="#1E88E5" /> : <Text style={styles.metricValue}>{value}</Text>}
+const MetricCard = ({ label, value, color, loading, onPress, darkMode }) => (
+	<TouchableOpacity style={[styles.metricCard, darkMode && styles.metricCardDark, { borderLeftColor: color, borderLeftWidth: 4 }]} onPress={onPress}>
+		<Text style={[styles.metricLabel, darkMode && styles.metricLabelDark]}>{label}</Text>
+		{loading ? <ActivityIndicator size="small" color="#1E88E5" /> : <Text style={[styles.metricValue, darkMode && styles.metricValueDark]}>{value}</Text>}
 	</TouchableOpacity>
 );
 
@@ -682,6 +695,7 @@ const chartConfig = {
 
 const styles = StyleSheet.create({
 	container: { flex: 1, backgroundColor: '#F3F4F6' },
+	containerDark: { backgroundColor: '#030712' },
 	header: {
 		flexDirection: 'row',
 		justifyContent: 'space-between',
@@ -691,10 +705,13 @@ const styles = StyleSheet.create({
 		paddingBottom: 20,
 		backgroundColor: '#FFF'
 	},
+	headerDark: { backgroundColor: '#111827' },
 	headerTitle: { fontSize: 28, fontWeight: '800', color: '#111827' },
 	headerSubtitle: { fontSize: 13, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, fontWeight: '700' },
 	iconButton: { padding: 10, backgroundColor: '#EFF6FF', borderRadius: 12 },
+	iconButtonDark: { backgroundColor: '#1E3A5F' },
 	filterSection: { backgroundColor: '#FFF', paddingBottom: 15 },
+	filterSectionDark: { backgroundColor: '#111827' },
 	filterRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 8 },
 	chip: {
 		flex: 1,
@@ -708,8 +725,10 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: '#E5E7EB',
 	},
+	chipDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
 	chipActive: { backgroundColor: '#1E88E5', borderColor: '#1E88E5' },
 	chipText: { fontSize: 14, color: '#4B5563', fontWeight: '500' },
+	chipTextDark: { color: '#D1D5DB' },
 	chipTextActive: { color: '#FFF', fontWeight: '600' },
 	metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, justifyContent: 'space-between' },
 	metricCard: {
@@ -720,11 +739,14 @@ const styles = StyleSheet.create({
 		marginBottom: 12,
 		...Platform.select({
 			ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-			android: { elevation: 2 }
-		})
-	},
+				android: { elevation: 2 }
+			})
+		},
+	metricCardDark: { backgroundColor: '#111827' },
 	metricLabel: { fontSize: 11, color: '#6B7280', fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
+	metricLabelDark: { color: '#9CA3AF' },
 	metricValue: { fontSize: 22, fontWeight: 'bold', color: '#111827' },
+	metricValueDark: { color: '#F9FAFB' },
 	secondaryMetricContainer: { width: '100%', flexDirection: 'row', gap: 12, marginTop: 4 },
 	secondaryCard: {
 		flex: 1,
@@ -737,11 +759,19 @@ const styles = StyleSheet.create({
 		borderColor: '#E5E7EB',
 		...Platform.select({
 			ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-			android: { elevation: 2 }
-		})
-	},
+				android: { elevation: 2 }
+			})
+		},
+	secondaryCardDark: { backgroundColor: '#111827', borderColor: '#374151' },
 	secondaryLabel: { fontSize: 10, color: '#6B7280', fontWeight: '600' },
+	secondaryLabelDark: { color: '#9CA3AF' },
 	secondaryValue: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
+	secondaryValueDark: { color: '#F9FAFB' },
+	warningCard: { borderLeftWidth: 3, borderLeftColor: '#DC2626' },
+	warningCardLight: { backgroundColor: '#FEF2F2' },
+	warningCardDark: { backgroundColor: '#3F1D1D', borderColor: '#7F1D1D' },
+	warningTextLight: { color: '#DC2626' },
+	warningTextDark: { color: '#FCA5A5' },
 	sectionCard: {
 		backgroundColor: '#FFF',
 		marginHorizontal: 16,
@@ -753,6 +783,7 @@ const styles = StyleSheet.create({
 			ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
 		})
 	},
+	sectionCardDark: { backgroundColor: '#111827' },
 	sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
 	sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 	sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
@@ -773,6 +804,7 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: '#E5E7EB',
 	},
+	mapLayerChipDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
 	mapLayerChipActive: {
 		backgroundColor: '#1E88E5',
 		borderColor: '#1E88E5',
@@ -782,6 +814,7 @@ const styles = StyleSheet.create({
 		fontWeight: '600',
 		color: '#4B5563',
 	},
+	mapLayerChipTextDark: { color: '#D1D5DB' },
 	mapLayerChipTextActive: {
 		color: '#FFFFFF',
 	},
@@ -797,24 +830,33 @@ const styles = StyleSheet.create({
 		paddingVertical: 8,
 		borderRadius: 10,
 	},
+	mapEmptyStateDark: { backgroundColor: 'rgba(17, 24, 39, 0.92)' },
 	mapEmptyText: { color: '#6B7280', fontSize: 12, textAlign: 'center', fontWeight: '600' },
 	modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
 	modalContent: { backgroundColor: 'white', borderRadius: 20, padding: 24, width: '90%', maxWidth: 400 },
+	modalContentDark: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151' },
 	modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
 	modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1F2937' },
 	modalText: { fontSize: 14, color: '#6B7280', marginBottom: 24, lineHeight: 20 },
 	modalLabel: { fontSize: 11, fontWeight: 'bold', color: '#9CA3AF', marginBottom: 12, marginTop: 16, letterSpacing: 1 },
+	modalLabelDark: { color: '#6B7280' },
 	selectionSection: { marginTop: 8 },
 	filterGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 	periodChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: 'white', minWidth: 90, alignItems: 'center' },
+	periodChipDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
 	periodChipActive: { backgroundColor: '#1E88E5', borderColor: '#1E88E5' },
 	periodChipText: { fontSize: 14, color: '#6B7280' },
+	periodChipTextDark: { color: '#D1D5DB' },
 	periodChipTextActive: { color: 'white', fontWeight: 'bold' },
 	monthGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 	monthChip: { width: '23%', paddingVertical: 8, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: 'white' },
+	monthChipDark: { backgroundColor: '#1F2937', borderColor: '#374151' },
 	monthChipActive: { backgroundColor: '#1E88E5', borderColor: '#1E88E5' },
 	monthChipText: { fontSize: 12, color: '#6B7280' },
+	monthChipTextDark: { color: '#D1D5DB' },
 	monthChipTextActive: { color: 'white', fontWeight: 'bold' },
 	applyButton: { backgroundColor: '#1E88E5', paddingVertical: 14, borderRadius: 12, marginTop: 24, alignItems: 'center' },
 	applyButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+	textWhite: { color: '#F9FAFB' },
+	textGray: { color: '#9CA3AF' },
 });

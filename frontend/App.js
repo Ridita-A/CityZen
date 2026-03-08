@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ComplaintProvider } from './src/context/ComplaintContext';
 import { NotificationProvider, useNotification, useAdminNotification } from './src/context/NotificationContext';
 
@@ -66,10 +67,50 @@ import AdminCategoryRequestDetailsScreen from './src/screens/AdminCategoryReques
 import AdminAnalyticsScreen from './src/screens/AdminAnalyticsScreen';
 
 const Stack = createNativeStackNavigator();
+const THEME_STORAGE_KEY = 'cityzen.darkMode';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
-  const toggleDarkMode = () => setDarkMode(!darkMode);
+  const [themeReady, setThemeReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadThemePreference = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (isMounted && savedTheme != null) {
+          setDarkMode(savedTheme === 'true');
+        }
+      } catch (error) {
+        console.error('Failed to load theme preference:', error);
+      } finally {
+        if (isMounted) {
+          setThemeReady(true);
+        }
+      }
+    };
+
+    loadThemePreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const toggleDarkMode = () => {
+    setDarkMode((currentMode) => {
+      const nextMode = !currentMode;
+      AsyncStorage.setItem(THEME_STORAGE_KEY, String(nextMode)).catch((error) => {
+        console.error('Failed to save theme preference:', error);
+      });
+      return nextMode;
+    });
+  };
+
+  if (!themeReady) {
+    return null;
+  }
 
   return (
     <ComplaintProvider>

@@ -253,7 +253,20 @@ async def verify_evidence(
         description_context = f'\nComplaint description: "{complaint_description}"' if complaint_description else ""
 
         if "authority" in evidence_type:
-            action_word = "being actively worked on" if "progress" in evidence_type else "fixed, repaired, or resolved"
+            is_resolution = "resolution" in evidence_type
+            
+            if is_resolution:
+                action_context = """The authority claims the issue has been RESOLVED/FIXED.
+IMPORTANT: For resolution evidence, the ABSENCE of the original problem IS valid proof.
+For example:
+- A dry, clear road proves waterlogging was fixed
+- A smooth road surface proves a pothole was repaired
+- A covered/sealed manhole proves an open manhole was fixed
+- A clean area proves garbage was cleared
+Do NOT reject an image just because it doesn't show active repair work — a clean "after" photo is legitimate resolution evidence."""
+            else:
+                action_context = """The authority claims work is IN PROGRESS.
+The image should show some sign of ongoing work, equipment, repairs, or workers at the site."""
             
             if has_original_images:
                 prompt = f"""
@@ -261,22 +274,24 @@ You are an AI evidence verification system for a civic complaint platform in Dha
 
 A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
 
-You are given the ORIGINAL complaint images (showing the reported issue) and a NEW EVIDENCE image submitted by the assigned authority as proof.
+You are given the ORIGINAL complaint images (showing the reported issue) and a NEW EVIDENCE image submitted by the assigned authority.
 
-Your job is to analyze whether the evidence image genuinely shows:
-1. The SAME location or area as the original complaint images
-2. The reported issue ({complaint_category}) being {action_word}
+{action_context}
+
+Your job is to determine if the evidence image is plausibly related to this complaint.
 
 Verdict options:
-- "genuine": The evidence clearly shows the same location AND the issue being {action_word}. The before-and-after is convincing.
-- "inconclusive": The evidence might be related but it's unclear if it's the same location or if work is actually being done. Maybe the angle is different, or the evidence is ambiguous.
-- "suspicious": The evidence appears unrelated to the original complaint (different location, different issue), or the image doesn't show any repair/fix work, or it looks like a stock/random photo.
+- "genuine": The evidence appears to be from a similar location/context and is relevant to the complaint category "{complaint_category}". It plausibly shows the situation at the complaint site.
+- "inconclusive": The evidence might be related but the connection is unclear.
+- "suspicious": The image is clearly unrelated — for example, it shows a completely different type of scene (e.g., an indoor photo for an outdoor road complaint), is a screenshot/stock photo, or shows something that has zero connection to "{complaint_category}".
 
 Rules:
 - Return ONLY valid JSON
-- Confidence must be a number between 0 and 100 (how confident you are in your verdict)
-- Reasoning should be a brief 1-2 sentence explanation that will be shown to the user
-- Be fair but vigilant — false evidence undermines the system
+- Confidence must be a number between 0 and 100
+- Reasoning should be a brief 1-2 sentence explanation shown to the user
+- Be LENIENT — only mark as "suspicious" if the image is clearly and obviously unrelated
+- Do NOT reject images just because the angle or framing is different from the originals
+- For resolution evidence, an image showing the area WITHOUT the problem is VALID
 
 Output JSON schema:
 {{
@@ -291,22 +306,23 @@ You are an AI evidence verification system for a civic complaint platform in Dha
 
 A complaint was filed about: "{complaint_title}" (Category: {complaint_category}).{description_context}
 
-An authority has submitted this image as proof that the issue is being {action_word}.
+An authority has submitted this image as evidence.
 
-Analyze whether this image plausibly shows:
-1. A civic issue of type "{complaint_category}" being {action_word}
-2. Genuine repair/construction/fix work (not a random or unrelated photo)
+{action_context}
+
+Analyze whether this image is plausibly related to a "{complaint_category}" complaint.
 
 Verdict options:
-- "genuine": The image clearly shows relevant work related to {complaint_category} being {action_word}.
-- "inconclusive": The image might show some work but it's unclear if it relates to {complaint_category}.
-- "suspicious": The image appears completely unrelated to {complaint_category}, or doesn't show any work being done, or looks like a stock/random photo.
+- "genuine": The image plausibly shows a scene related to {complaint_category} — either work being done, or the area after the issue has been addressed.
+- "inconclusive": The image might be related but it's unclear.
+- "suspicious": The image is clearly and obviously unrelated to {complaint_category} — e.g., a selfie, a screenshot, an indoor photo for an outdoor complaint, or something with zero connection to civic infrastructure.
 
 Rules:
 - Return ONLY valid JSON
 - Confidence must be a number between 0 and 100
 - Reasoning should be a brief 1-2 sentence explanation shown to the user
-- Be fair but vigilant
+- Be LENIENT — only mark as "suspicious" if the image is clearly unrelated
+- For resolution evidence, showing the area in a normal/fixed state is VALID proof
 
 Output JSON schema:
 {{

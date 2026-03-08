@@ -3,8 +3,22 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ScrollView, Act
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Camera, Image as GalleryIcon, ChevronLeft, X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCcw, ArrowRight } from 'lucide-react-native';
 import axios from 'axios';
+import * as Location from 'expo-location';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const GPS_DISTANCE_THRESHOLD_METERS = 50; // Max allowed distance from complaint location
+
+// Haversine distance formula (meters)
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 
 export default function AddEvidenceScreen({ navigation, route }) {
@@ -14,17 +28,60 @@ export default function AddEvidenceScreen({ navigation, route }) {
     const [isUploading, setIsUploading] = useState(false); // To manage loading state during upload
     const [isVerifying, setIsVerifying] = useState(false); // AI verification loading state
     const [verificationResults, setVerificationResults] = useState({}); // Maps URI -> verdict result
-    
+
     // Camera state
     const [permission, requestPermission] = useCameraPermissions();
     const cameraRef = useRef(null);
     const [isCapturing, setIsCapturing] = useState(false);
+    const [complaintData, setComplaintData] = useState(null);
 
-    // Handle returning from Offline Gallery
+    // Fetch complaint data for GPS comparison
+    useEffect(() => {
+        const fetchComplaint = async () => {
+            try {
+                const res = await axios.get(`${API_URL}/api/complaints/${complaintId}`);
+                setComplaintData(res.data);
+            } catch (err) {
+                console.warn('Failed to fetch complaint data for GPS check:', err.message);
+            }
+        };
+        if (complaintId) fetchComplaint();
+    }, [complaintId]);
+
+    // Centralized GPS distance check
+    const checkLocationDistance = (imageLat, imageLon) => {
+        if (!complaintData?.latitude || !complaintData?.longitude) return true; // Can't check, allow
+        const distance = getDistanceInMeters(
+            imageLat, imageLon,
+            parseFloat(complaintData.latitude), parseFloat(complaintData.longitude)
+        );
+        if (distance > GPS_DISTANCE_THRESHOLD_METERS) {
+            Alert.alert(
+                '\ud83d\udccd Location Mismatch',
+                `This image was captured ${Math.round(distance)}m away from the complaint location (max ${GPS_DISTANCE_THRESHOLD_METERS}m allowed).\n\nPlease capture evidence at the complaint site.`,
+                [{ text: 'OK' }]
+            );
+            return false;
+        }
+        return true;
+    };
+
+    // Handle returning from Offline Gallery — check stored GPS
     useEffect(() => {
         if (selectedOfflineImage) {
             const uri = selectedOfflineImage.imageUri;
             if (!selectedImages.includes(uri)) {
+                // Check stored GPS from offline image against complaint location
+                if (selectedOfflineImage.latitude && selectedOfflineImage.longitude && complaintData) {
+                    const isNearby = checkLocationDistance(
+                        selectedOfflineImage.latitude,
+                        selectedOfflineImage.longitude
+                    );
+                    if (!isNearby) {
+                        return; // Block — image was taken too far from complaint
+                    }
+                }
+
                 setSelectedImages(prev => [...prev, uri]);
                 setCapturedAssets(prev => [...prev, {
                     uri: uri,
@@ -33,7 +90,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
                 }]);
             }
         }
-    }, [selectedOfflineImage]);
+    }, [selectedOfflineImage, complaintData]);
 
     const removeImage = (uriToRemove) => {
         setSelectedImages(prev => prev.filter(uri => uri !== uriToRemove));
@@ -52,11 +109,26 @@ export default function AddEvidenceScreen({ navigation, route }) {
 
         setIsCapturing(true);
         try {
+            // Mandatory GPS location check
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Location Required', 'Location permission is needed to verify evidence is from the complaint site.');
+                setIsCapturing(false);
+                return;
+            }
+
+            const gps = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+            const isNearby = checkLocationDistance(gps.coords.latitude, gps.coords.longitude);
+            if (!isNearby) {
+                setIsCapturing(false);
+                return;
+            }
+
             const photo = await cameraRef.current.takePictureAsync({
                 quality: 0.7,
                 skipProcessing: true
             });
-            
+
             if (photo) {
                 setSelectedImages(prev => [...prev, photo.uri]);
                 setCapturedAssets(prev => [...prev, {
@@ -74,10 +146,10 @@ export default function AddEvidenceScreen({ navigation, route }) {
     };
 
     const handleLibraryPick = () => {
-        navigation.navigate('OfflineGallery', { 
-            mode: 'selection', 
+        navigation.navigate('OfflineGallery', {
+            mode: 'selection',
             returnTo: 'AddEvidence',
-            complaintId: complaintId 
+            complaintId: complaintId
         });
     };
 
@@ -162,7 +234,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
             formData.append('images', {
                 uri: asset.uri,
                 name: filename,
-                type: asset.mimeType || 'image/jpeg', 
+                type: asset.mimeType || 'image/jpeg',
             });
         });
 
@@ -289,8 +361,8 @@ export default function AddEvidenceScreen({ navigation, route }) {
                         )}
                     </View>
                 ) : (
-                    <CameraView 
-                        style={styles.camera} 
+                    <CameraView
+                        style={styles.camera}
                         ref={cameraRef}
                         facing="back"
                     >
@@ -332,10 +404,10 @@ export default function AddEvidenceScreen({ navigation, route }) {
                 {!previewUri ? (
                     <>
                         <View style={styles.sideButtonContainer} />
-                        
+
                         <View style={styles.cameraButtonContainer}>
-                            <TouchableOpacity 
-                                onPress={takePicture} 
+                            <TouchableOpacity
+                                onPress={takePicture}
                                 style={[styles.cameraButton, (isVerifying || isUploading || isCapturing) && styles.disabledButton]}
                                 disabled={isVerifying || isUploading || isCapturing}
                             >
@@ -344,8 +416,8 @@ export default function AddEvidenceScreen({ navigation, route }) {
                         </View>
 
                         <View style={styles.sideButtonContainer}>
-                            <TouchableOpacity 
-                                onPress={handleLibraryPick} 
+                            <TouchableOpacity
+                                onPress={handleLibraryPick}
                                 style={styles.sideButton}
                                 disabled={isVerifying || isUploading || isCapturing}
                             >
@@ -356,16 +428,16 @@ export default function AddEvidenceScreen({ navigation, route }) {
                     </>
                 ) : (
                     <View style={styles.actionButtonContainer}>
-                        <TouchableOpacity 
-                            onPress={() => removeImage(previewUri)} 
+                        <TouchableOpacity
+                            onPress={() => removeImage(previewUri)}
                             style={styles.actionButton}
                             disabled={isVerifying || isUploading}
                         >
                             <RefreshCcw size={30} color="white" />
                             <Text style={styles.sideButtonText}>Retake</Text>
                         </TouchableOpacity>
-                        
-                        <TouchableOpacity 
+
+                        <TouchableOpacity
                             onPress={() => setSelectedImages(prev => prev.slice(0, -1))} // Just hide preview to show camera
                             style={styles.actionButton}
                             disabled={isVerifying || isUploading}
@@ -374,8 +446,8 @@ export default function AddEvidenceScreen({ navigation, route }) {
                             <Text style={styles.sideButtonText}>Add More</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            onPress={handleAddEvidence} 
+                        <TouchableOpacity
+                            onPress={handleAddEvidence}
                             style={styles.actionButton}
                             disabled={isVerifying || isUploading}
                         >

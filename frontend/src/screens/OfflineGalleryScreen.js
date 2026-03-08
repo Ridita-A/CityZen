@@ -4,10 +4,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { getOfflineReports, deleteReport, updateReportStatus } from '../utils/offlineStorage';
 import { useComplaint } from '../context/ComplaintContext';
-import { Trash2, Upload, Wifi, WifiOff, ChevronRight, CheckCircle, Clock, Lock } from 'lucide-react-native';
+import { Trash2, Upload, Wifi, WifiOff, ChevronRight, CheckCircle, Clock, Lock, ChevronLeft } from 'lucide-react-native';
 import * as Location from 'expo-location';
 
-export default function OfflineGalleryScreen({ navigation }) {
+export default function OfflineGalleryScreen({ navigation, route }) {
+    const { mode, returnTo, complaintId } = route.params || {};
+    const isSelectionMode = mode === 'selection';
+
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
@@ -73,6 +76,14 @@ export default function OfflineGalleryScreen({ navigation }) {
     };
 
     const handleSelectReport = async (report) => {
+        if (isSelectionMode && returnTo) {
+            navigation.navigate(returnTo, {
+                complaintId: complaintId,
+                selectedOfflineImage: report
+            });
+            return;
+        }
+
         if (!isConnected && !report.uploaded) {
             Alert.alert("Offline", "You need internet to proceed with the submission flow.");
             return;
@@ -186,9 +197,11 @@ export default function OfflineGalleryScreen({ navigation }) {
                 <TouchableOpacity onPress={() => handleSelectReport(item)} style={styles.actionButton}>
                     <ChevronRight size={24} color="#1E88E5" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
-                    <Trash2 size={20} color="#EF4444" />
-                </TouchableOpacity>
+                {!isSelectionMode && (
+                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
+                        <Trash2 size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                )}
             </View>
         </View>
     );
@@ -196,7 +209,12 @@ export default function OfflineGalleryScreen({ navigation }) {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Offline Reports</Text>
+                <View style={styles.headerLeft}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                        <ChevronLeft size={24} color="white" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>{isSelectionMode ? 'Select Evidence' : 'Offline Reports'}</Text>
+                </View>
                 <View style={styles.connectionStatus}>
                     {isConnected ? (
                         <View style={styles.onlineStatus}>
@@ -259,6 +277,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    backBtn: {
+        padding: 5,
     },
     headerTitle: {
         fontSize: 24,

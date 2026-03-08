@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Camera, Image as GalleryIcon, ArrowLeft, X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCcw, ArrowRight } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Camera, Image as GalleryIcon, ChevronLeft, X, Sparkles, ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCcw, ArrowRight } from 'lucide-react-native';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 
 export default function AddEvidenceScreen({ navigation, route }) {
-    const { complaintId } = route.params;
+    const { complaintId, selectedOfflineImage } = route.params || {};
     const [selectedImages, setSelectedImages] = useState([]); // Array of URIs for displaying preview
     const [capturedAssets, setCapturedAssets] = useState([]); // Array of asset objects
     const [isUploading, setIsUploading] = useState(false); // To manage loading state during upload
@@ -21,15 +20,20 @@ export default function AddEvidenceScreen({ navigation, route }) {
     const cameraRef = useRef(null);
     const [isCapturing, setIsCapturing] = useState(false);
 
-    //Permissions
-    const requestLibraryPermission = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission to access media library is required!');
-            return false;
+    // Handle returning from Offline Gallery
+    useEffect(() => {
+        if (selectedOfflineImage) {
+            const uri = selectedOfflineImage.imageUri;
+            if (!selectedImages.includes(uri)) {
+                setSelectedImages(prev => [...prev, uri]);
+                setCapturedAssets(prev => [...prev, {
+                    uri: uri,
+                    fileName: `offline-evidence-${selectedOfflineImage.id}.jpg`,
+                    mimeType: 'image/jpeg'
+                }]);
+            }
         }
-        return true;
-    };
+    }, [selectedOfflineImage]);
 
     const removeImage = (uriToRemove) => {
         setSelectedImages(prev => prev.filter(uri => uri !== uriToRemove));
@@ -69,22 +73,12 @@ export default function AddEvidenceScreen({ navigation, route }) {
         }
     };
 
-    const handleLibraryPick = async () => {
-        const hasPermission = await requestLibraryPermission();
-        if (!hasPermission) return;
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-            allowsMultipleSelection: true, // Allow multiple selection
-            exif: true,
+    const handleLibraryPick = () => {
+        navigation.navigate('OfflineGallery', { 
+            mode: 'selection', 
+            returnTo: 'AddEvidence',
+            complaintId: complaintId 
         });
-
-        if (result.assets?.length > 0) {
-            setSelectedImages(prev => [...prev, ...result.assets.map(asset => asset.uri)]);
-            setCapturedAssets(prev => [...prev, ...result.assets]);
-        }
     };
 
     // AI Evidence Verification
@@ -164,13 +158,11 @@ export default function AddEvidenceScreen({ navigation, route }) {
         formData.append('complaintId', complaintId);
 
         capturedAssets.forEach((asset, index) => {
-            // Adjust filename to be unique for each asset, if necessary.
-            // For now, using original filename or a generic one.
             const filename = asset.fileName || `image-${index}.jpg`;
             formData.append('images', {
                 uri: asset.uri,
                 name: filename,
-                type: asset.mimeType || 'image/jpeg', // Default to jpeg if mimeType is not available
+                type: asset.mimeType || 'image/jpeg', 
             });
         });
 
@@ -206,8 +198,6 @@ export default function AddEvidenceScreen({ navigation, route }) {
         if (success) {
             navigation.navigate('ComplaintDetails', {
                 id: complaintId,
-                // No longer passing newEvidenceImages here if backend re-fetches
-                // But keeping it for immediate display if re-fetch is not instant
                 newEvidenceImages: selectedImages,
             });
         }
@@ -236,7 +226,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
             <View style={styles.container}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                        <ArrowLeft size={24} color="white" />
+                        <ChevronLeft size={24} color="white" />
                     </TouchableOpacity>
                     <Text style={styles.headerText}>Add Evidence</Text>
                 </View>
@@ -256,7 +246,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <ArrowLeft size={24} color="white" />
+                    <ChevronLeft size={24} color="white" />
                 </TouchableOpacity>
                 <Text style={styles.headerText}>Add Evidence</Text>
             </View>
@@ -360,7 +350,7 @@ export default function AddEvidenceScreen({ navigation, route }) {
                                 disabled={isVerifying || isUploading || isCapturing}
                             >
                                 <GalleryIcon size={30} color="white" />
-                                <Text style={styles.sideButtonText}>Gallery</Text>
+                                <Text style={styles.sideButtonText}>Offline Gallery</Text>
                             </TouchableOpacity>
                         </View>
                     </>

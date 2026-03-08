@@ -1802,11 +1802,33 @@ exports.deleteComplaint = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
+    const requesterUid = req.body?.citizenUid;
 
     const complaint = await Complaint.findByPk(id, { transaction: t });
     if (!complaint) {
       await t.rollback();
       return res.status(404).json({ message: 'Complaint not found.' });
+    }
+
+    const isAdminOverride = requesterUid === 'admin';
+    const complaintStatus = String(complaint.currentStatus || '').toLowerCase();
+    const citizenDeletableStatuses = ['pending', 'rejected'];
+
+    if (!isAdminOverride) {
+      if (!requesterUid) {
+        await t.rollback();
+        return res.status(400).json({ message: 'Missing citizenUid in request body.' });
+      }
+
+      if (String(complaint.citizenUid) !== String(requesterUid)) {
+        await t.rollback();
+        return res.status(403).json({ message: 'You can only delete your own complaints.' });
+      }
+
+      if (!citizenDeletableStatuses.includes(complaintStatus)) {
+        await t.rollback();
+        return res.status(400).json({ message: 'Only pending or rejected complaints can be deleted by the citizen.' });
+      }
     }
 
     // Delete dependent rows first to avoid FK constraint failures on complaint delete.

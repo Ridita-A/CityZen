@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
-import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus, ShieldCheck, ShieldAlert } from 'lucide-react-native';
+import { MapPin, Calendar, Heart, ArrowLeft, CheckCircle, Circle, AlertCircle, Camera, X, Plus, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react-native';
 
 import api from '../services/api';
 
@@ -32,6 +32,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
   const [appealImages, setAppealImages] = useState([]);
   const [appealSubmitting, setAppealSubmitting] = useState(false);
   const [criticalFailureModalVisible, setCriticalFailureModalVisible] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // Double-tap for upvote
   const [lastImageTap, setLastImageTap] = useState(0);
@@ -275,6 +276,74 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     }
   };
 
+  const getCurrentUserUid = () => {
+    if (!userData) return null;
+    return userData.firebaseUid || userData.uid || userData.id || null;
+  };
+
+  const isComplaintOwner = () => {
+    const currentUserUid = getCurrentUserUid();
+    if (!complaint || !currentUserUid) return false;
+    return String(complaint.citizenUid) === String(currentUserUid);
+  };
+
+  const canDeleteComplaint = () => {
+    if (!isComplaintOwner()) return false;
+    const status = String(complaint?.currentStatus || '').toLowerCase();
+    return ['pending', 'rejected'].includes(status);
+  };
+
+  const handleDeleteComplaint = () => {
+    const currentUserUid = getCurrentUserUid();
+    if (!currentUserUid) {
+      Alert.alert('Error', 'Please login to delete your complaint.');
+      return;
+    }
+
+    if (!canDeleteComplaint()) {
+      Alert.alert('Not allowed', 'Only your pending or rejected complaints can be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Complaint',
+      'Delete this complaint permanently? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeleteSubmitting(true);
+              await api.delete(`/complaints/${complaintIdToFetch}`, {
+                data: { citizenUid: currentUserUid },
+              });
+
+              Alert.alert('Deleted', 'Complaint deleted successfully.', [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else {
+                      navigation.navigate('HomeScreen');
+                    }
+                  },
+                },
+              ]);
+            } catch (e) {
+              console.error('Delete complaint failed', e);
+              Alert.alert('Error', e.response?.data?.message || 'Failed to delete complaint.');
+            } finally {
+              setDeleteSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Helper to check bump eligibility
   const canBumpComplaint = () => {
     if (!complaint || !userData) return false;
@@ -419,6 +488,19 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
               <TouchableOpacity style={styles.bumpButtonLarge} onPress={handleBump}>
                 <Text style={styles.bumpTextLarge}>🚀  Bump to Top of Queue</Text>
                 <Text style={styles.bumpSubText}>Authority hasn't responded in 3 days</Text>
+              </TouchableOpacity>
+            )}
+
+            {canDeleteComplaint() && (
+              <TouchableOpacity
+                style={[styles.deleteComplaintButton, deleteSubmitting && styles.deleteComplaintButtonDisabled]}
+                onPress={handleDeleteComplaint}
+                disabled={deleteSubmitting}
+              >
+                <Trash2 size={16} color="white" />
+                <Text style={styles.deleteComplaintText}>
+                  {deleteSubmitting ? 'Deleting...' : 'Delete Complaint'}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -784,6 +866,24 @@ const styles = StyleSheet.create({
   bumpButtonLarge: { backgroundColor: '#F0F9FF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#BAE6FD', alignItems: 'center', marginBottom: 16 },
   bumpTextLarge: { color: '#0284C7', fontWeight: 'bold', fontSize: 16 },
   bumpSubText: { color: '#0EA5E9', fontSize: 12, marginTop: 4 },
+  deleteComplaintButton: {
+    backgroundColor: '#DC2626',
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  deleteComplaintButtonDisabled: {
+    opacity: 0.7,
+  },
+  deleteComplaintText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
   actionText: { fontSize: 14 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },

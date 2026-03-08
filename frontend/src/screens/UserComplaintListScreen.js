@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
 import { ArrowLeft, Calendar, CheckCircle, Clock, TrendingUp, AlertCircle, FileText } from 'lucide-react-native';
@@ -15,6 +16,12 @@ export default function UserComplaintListScreen({ navigation, route, darkMode, t
     useEffect(() => {
         fetchComplaints();
     }, []);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchComplaints();
+        }, [statusFilter])
+    );
 
     const fetchComplaints = async () => {
         try {

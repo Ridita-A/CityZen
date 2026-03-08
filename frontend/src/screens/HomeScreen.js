@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import Navigation from '../components/Navigation';
 import BottomNav from '../components/BottomNav';
 import { FileText, List, CheckCircle, Clock, PlusCircle, TrendingUp, AlertCircle } from 'lucide-react-native';
@@ -70,6 +71,12 @@ export default function HomeScreen({ navigation, onLogout, darkMode, toggleDarkM
   useEffect(() => {
     fetchData();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);

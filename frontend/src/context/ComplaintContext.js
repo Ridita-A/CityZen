@@ -11,7 +11,6 @@ export const ComplaintProvider = ({ children }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [privacyEnabled, setPrivacyEnabled] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [assignedAuthorities, setAssignedAuthorities] = useState([]);
   const [unknownCategoryLabel, setUnknownCategoryLabel] = useState(null); // AI label not found in DB
@@ -25,7 +24,6 @@ export const ComplaintProvider = ({ children }) => {
     setTitle('');
     setDescription('');
     setSelectedCategory(null);
-    setPrivacyEnabled(false);
     setAiResult(null);
     setAssignedAuthorities([]);
     setUnknownCategoryLabel(null);
@@ -48,8 +46,6 @@ export const ComplaintProvider = ({ children }) => {
     setDescription,
     selectedCategory,
     setSelectedCategory,
-    privacyEnabled,
-    setPrivacyEnabled,
     assignedAuthorities,
     setAssignedAuthorities,
     unknownCategoryLabel,

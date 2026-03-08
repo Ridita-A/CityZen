@@ -79,6 +79,17 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     critical_failure: 2,
   };
   const currentStep = statusToStepIndex[(complaint?.currentStatus || 'pending')] ?? 0;
+  const hasComplaintData = complaint !== null;
+
+  const applyUpvoteResult = useCallback((responseData) => {
+    if (!responseData || responseData.upvotes === undefined) return;
+    setComplaint(prev => (
+      prev
+        ? { ...prev, upvotes: responseData.upvotes, hasUpvoted: Boolean(responseData.hasUpvoted) }
+        : prev
+    ));
+    setUpvotes(responseData.upvotes);
+  }, []);
 
   const handleUpvote = async () => {
     try {
@@ -88,17 +99,10 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       }
 
       const res = await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
-      if (res.data && res.data.upvotes !== undefined) {
-        setComplaint(prev => ({ ...prev, upvotes: res.data.upvotes, hasUpvoted: true }));
-        setUpvotes(res.data.upvotes);
-      }
+      applyUpvoteResult(res.data);
     } catch (e) {
-      if (e.response && e.response.status === 400) {
-        Alert.alert('Info', 'You have already upvoted this complaint.');
-      } else {
-        console.error('Upvote failed', e);
-        Alert.alert('Error', 'Failed to upvote.');
-      }
+      console.error('Upvote toggle failed', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to update upvote.');
     }
   };
 
@@ -216,9 +220,10 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       setError(null);
       // We don't set loading(true) here to avoid flickering on every focus
       // Only set it if we don't have complaint data yet
-      if (!complaint) setLoading(true);
+      if (!hasComplaintData) setLoading(true);
 
       const response = await api.get(`/complaints/${complaintIdToFetch}`, {
+        params: userData?.firebaseUid ? { citizenUid: userData.firebaseUid } : undefined,
         timeout: 10000,
       });
       setComplaint(response.data);
@@ -226,7 +231,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
       setRating(response.data.rating || 0);
     } catch (err) {
       console.error('Error fetching complaint:', err);
-      if (!complaint) {
+      if (!hasComplaintData) {
         let message = 'Failed to load complaint details';
         if (err.code === 'ECONNABORTED') message = 'Network timeout. Please check your connection.';
         else if (err.message === 'Network Error') message = 'Network error. Please check your connection.';
@@ -236,7 +241,7 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
     } finally {
       setLoading(false);
     }
-  }, [complaintIdToFetch]);
+  }, [complaintIdToFetch, hasComplaintData, userData?.firebaseUid]);
 
   useEffect(() => {
     const maybeShowCriticalFailureModal = async () => {
@@ -382,17 +387,18 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
           Alert.alert('Error', 'Please login to upvote');
           return;
         }
-        await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
-        // Show heart animation
-        Animated.sequence([
-          Animated.spring(heartAnimScale, { toValue: 1, useNativeDriver: true, friction: 3 }),
-          Animated.delay(400),
-          Animated.timing(heartAnimScale, { toValue: 0, duration: 200, useNativeDriver: true })
-        ]).start();
-        // Refresh complaint to update upvote count
-        fetchComplaintData();
+        const res = await api.post(`/complaints/${complaintIdToFetch}/upvote`, { citizenUid: userData.firebaseUid });
+        applyUpvoteResult(res.data);
+
+        if (res.data?.hasUpvoted) {
+          Animated.sequence([
+            Animated.spring(heartAnimScale, { toValue: 1, useNativeDriver: true, friction: 3 }),
+            Animated.delay(400),
+            Animated.timing(heartAnimScale, { toValue: 0, duration: 200, useNativeDriver: true })
+          ]).start();
+        }
       } catch (e) {
-        console.error('Upvote failed', e);
+        console.error('Upvote toggle failed', e);
       }
     }
     setLastImageTap(now);
@@ -506,8 +512,8 @@ export default function ComplaintDetailsScreen({ route, navigation, onLogout, da
 
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.actionButton} onPress={handleUpvote}>
-                <Heart size={16} color={upvotes > 0 ? "#EF4444" : "#6B7280"} fill={complaint?.hasUpvoted ? "#EF4444" : "none"} />
-                <Text style={[styles.actionText, { marginLeft: 4, color: upvotes > 0 ? "#EF4444" : "#6B7280" }]}>
+                <Heart size={16} color={complaint?.hasUpvoted ? "#EF4444" : "#6B7280"} fill={complaint?.hasUpvoted ? "#EF4444" : "none"} />
+                <Text style={[styles.actionText, { marginLeft: 4, color: complaint?.hasUpvoted ? "#EF4444" : "#6B7280" }]}>
                   {upvotes} upvotes
                 </Text>
               </TouchableOpacity>

@@ -1971,28 +1971,32 @@ exports.upvoteComplaint = async (req, res) => {
       transaction: t,
     });
 
+    let hasUpvoted = false;
+    let message = 'Upvote removed';
+
     if (existingUpvote) {
-      await t.rollback();
-      return res.status(400).json({ message: 'You have already upvoted this complaint.' });
-    }
-
-    // Create upvote
-    try {
-      await Upvote.create({
-        citizenUid: citizenUid,
-        complaintId: id,
-      }, { transaction: t });
-    } catch (createError) {
-      if (createError.name === 'SequelizeUniqueConstraintError') {
-        await t.rollback();
-        return res.status(400).json({ message: 'You have already upvoted this complaint.' });
+      await existingUpvote.destroy({ transaction: t });
+      const nextUpvoteCount = Math.max(0, Number(complaint.upvotes || 0) - 1);
+      await complaint.update({ upvotes: nextUpvoteCount }, { transaction: t });
+    } else {
+      try {
+        await Upvote.create({
+          citizenUid: citizenUid,
+          complaintId: id,
+        }, { transaction: t });
+      } catch (createError) {
+        if (createError.name === 'SequelizeUniqueConstraintError') {
+          await t.rollback();
+          return res.status(400).json({ message: 'Failed to toggle upvote. Please try again.' });
+        }
+        throw createError;
       }
-      throw createError;
+
+      await complaint.increment('upvotes', { transaction: t });
+      hasUpvoted = true;
+      message = 'Upvote successful';
     }
 
-    // Increment complaint upvote count
-    await complaint.increment('upvotes', { transaction: t });
-    // Reload to get the new count
     await complaint.reload({ transaction: t });
 
     const recalculatedPriority = computePriorityScore({
@@ -2003,15 +2007,17 @@ exports.upvoteComplaint = async (req, res) => {
     await complaint.update({ priorityScore: recalculatedPriority }, { transaction: t });
 
     const escalationState = await evaluateComplaintEscalation(complaint, { transaction: t });
+    const escalationLevel = complaint.escalationLevel;
 
     await t.commit();
     res.json({
-      message: 'Upvote successful',
+      message,
       upvotes: complaint.upvotes,
+      hasUpvoted,
       priorityScore: recalculatedPriority,
-      escalated: escalationState.escalated,
-      escalationTrackA: escalationState.trackA,
-      escalationTrackB: escalationState.trackB,
+      escalated: Boolean(complaint.forwardedByAdmin || escalationState.escalated),
+      escalationTrackA: escalationLevel === 'track_a' || escalationLevel === 'both' || escalationState.trackA === true,
+      escalationTrackB: escalationLevel === 'track_b' || escalationLevel === 'both' || escalationState.trackB === true,
     });
 
   } catch (error) {

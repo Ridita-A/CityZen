@@ -1,18 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { getOfflineReports, deleteReport, updateReportStatus } from '../utils/offlineStorage';
 import { useComplaint } from '../context/ComplaintContext';
-import { Trash2, Upload, Wifi, WifiOff, ChevronRight, CheckCircle, Clock } from 'lucide-react-native';
+import { Trash2, Upload, Wifi, WifiOff, ChevronRight, CheckCircle, Clock, Lock } from 'lucide-react-native';
 import * as Location from 'expo-location';
 
 export default function OfflineGalleryScreen({ navigation }) {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [checkingAuth, setCheckingAuth] = useState(true);
     const { setImages, setLocation, setLocationTime, resetState } = useComplaint();
 
     useEffect(() => {
+        const checkAuthentication = async () => {
+            try {
+                const userDataStr = await AsyncStorage.getItem('userData');
+                if (userDataStr) {
+                    const userData = JSON.parse(userDataStr);
+                    if (userData.firebaseUid || userData.uid || userData.id) {
+                        setIsAuthenticated(true);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking authentication:', error);
+            } finally {
+                setCheckingAuth(false);
+            }
+        };
+
+        checkAuthentication();
+    }, []);
+
+    useEffect(() => {
+        if (!isAuthenticated || checkingAuth) return;
+
         const unsubscribe = NetInfo.addEventListener(state => {
             setIsConnected(state.isConnected);
         });
@@ -20,7 +45,7 @@ export default function OfflineGalleryScreen({ navigation }) {
         loadReports();
 
         return () => unsubscribe();
-    }, []);
+    }, [isAuthenticated, checkingAuth]);
 
     const loadReports = async () => {
         setLoading(true);
@@ -89,6 +114,53 @@ export default function OfflineGalleryScreen({ navigation }) {
         // Navigate to details screen
         navigation.navigate('SubmitComplaintDetails');
     };
+
+    if (checkingAuth) {
+        return (
+            <View style={styles.container}>
+                <View style={styles.centerContent}>
+                    <ActivityIndicator size="large" color="#1E88E5" />
+                    <Text style={styles.loadingText}>Checking access...</Text>
+                </View>
+            </View>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return (
+            <View style={styles.container}>
+                <View style={styles.centerContent}>
+                    <View style={styles.lockIcon}>
+                        <Lock size={64} color="#9CA3AF" />
+                    </View>
+                    <Text style={styles.lockTitle}>Login Required</Text>
+                    <Text style={styles.lockMessage}>
+                        You need to login or create an account to save drafts and access offline reports.
+                    </Text>
+                    <View style={styles.buttonContainer}>
+                        <TouchableOpacity
+                            style={styles.loginButton}
+                            onPress={() => navigation.navigate('Login')}
+                        >
+                            <Text style={styles.loginButtonText}>Log In</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.signupButton}
+                            onPress={() => navigation.navigate('Signup')}
+                        >
+                            <Text style={styles.signupButtonText}>Sign Up</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={() => navigation.goBack()}
+                    >
+                        <Text style={styles.backButtonText}>Go Back</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
 
     const renderItem = ({ item }) => (
         <View style={styles.reportCard}>
@@ -326,5 +398,81 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 13,
         flex: 1,
+    },
+    centerContent: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 40,
+    },
+    loadingText: {
+        marginTop: 16,
+        fontSize: 16,
+        color: '#6B7280',
+    },
+    lockIcon: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: '#F3F4F6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    lockTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1F2937',
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    lockMessage: {
+        fontSize: 16,
+        color: '#6B7280',
+        textAlign: 'center',
+        lineHeight: 24,
+        marginBottom: 32,
+    },
+    buttonContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 16,
+    },
+    loginButton: {
+        backgroundColor: '#1E88E5',
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 12,
+        minWidth: 120,
+        alignItems: 'center',
+    },
+    loginButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    signupButton: {
+        backgroundColor: 'white',
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 12,
+        minWidth: 120,
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#1E88E5',
+    },
+    signupButtonText: {
+        color: '#1E88E5',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    backButton: {
+        marginTop: 8,
+        padding: 12,
+    },
+    backButtonText: {
+        color: '#6B7280',
+        fontSize: 14,
+        fontWeight: '600',
     }
 });

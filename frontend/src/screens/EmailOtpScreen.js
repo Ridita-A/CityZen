@@ -63,8 +63,25 @@ export default function EmailOtpScreen({ route, navigation }) {
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState('');
 
-  const goToRoleHome = (user) => {
+  const goToRoleHome = async (user) => {
     const selectedRole = user?.role || signupPayload?.role || 'citizen';
+    
+    // Check for pending complaint submission
+    try {
+      const pendingStr = await AsyncStorage.getItem('pendingComplaintSubmission');
+      if (pendingStr && selectedRole === 'citizen') {
+        // Navigate to SubmitComplaint screen to auto-complete submission
+        navigation.reset({ 
+          index: 0, 
+          routes: [{ name: 'HomeScreen' }, { name: 'SubmitComplaint' }] 
+        });
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking pending submission:', error);
+    }
+    
+    // Normal navigation based on role
     if (selectedRole === 'admin') {
       navigation.reset({ index: 0, routes: [{ name: 'AdminDashboard' }] });
     } else if (selectedRole === 'authority') {

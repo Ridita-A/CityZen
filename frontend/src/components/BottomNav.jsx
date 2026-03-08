@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Home, FileText, List, User } from 'lucide-react-native';
 import { useRoute } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function BottomNav({ navigation, darkMode }) {
   let currentRoute = 'HomeScreen';
@@ -16,9 +17,31 @@ export default function BottomNav({ navigation, darkMode }) {
   const getColor = (name) => currentRoute === name ? activeColor : inactiveColor;
   const getWeight = (name) => currentRoute === name ? 'bold' : 'normal';
 
+  const checkAuthAndNavigate = async (screen) => {
+    try {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) {
+        Alert.alert(
+          'Login Required',
+          'Please log in or create an account to access this page.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Log In', onPress: () => navigation.navigate('Login') },
+            { text: 'Sign Up', onPress: () => navigation.navigate('Signup') }
+          ]
+        );
+        return;
+      }
+      navigation.navigate(screen);
+    } catch (error) {
+      console.error('Auth check error:', error);
+      navigation.navigate('Login');
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode ? styles.darkContainer : styles.lightContainer]}>
-      <TouchableOpacity onPress={() => navigation.navigate('HomeScreen')} style={styles.tab}>
+      <TouchableOpacity onPress={() => checkAuthAndNavigate('HomeScreen')} style={styles.tab}>
         <Home size={24} color={getColor('HomeScreen')} />
         <Text style={[styles.label, { color: getColor('HomeScreen'), fontWeight: getWeight('HomeScreen') }]}>Home</Text>
       </TouchableOpacity>
@@ -33,7 +56,7 @@ export default function BottomNav({ navigation, darkMode }) {
         <Text style={[styles.label, { color: getColor('Feed'), fontWeight: getWeight('Feed') }]}>Feed</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.tab}>
+      <TouchableOpacity onPress={() => checkAuthAndNavigate('Profile')} style={styles.tab}>
         <User size={24} color={getColor('Profile')} />
         <Text style={[styles.label, { color: getColor('Profile'), fontWeight: getWeight('Profile') }]}>Profile</Text>
       </TouchableOpacity>

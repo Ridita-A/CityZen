@@ -14,6 +14,22 @@ export default function HomeScreen({ navigation, onLogout, darkMode, toggleDarkM
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('Citizen');
 
+  // Auth guard - redirect if not logged in
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const userDataStr = await AsyncStorage.getItem('userData');
+        if (!userDataStr) {
+          navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] });
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        navigation.reset({ index: 1, routes: [{ name: 'Landing' }, { name: 'Login' }] });
+      }
+    };
+    checkAuth();
+  }, [navigation]);
+
   const fetchData = async () => {
     try {
       const userDataStr = await AsyncStorage.getItem('userData');
@@ -102,7 +118,7 @@ export default function HomeScreen({ navigation, onLogout, darkMode, toggleDarkM
           <Text style={{ color: darkMode ? '#9CA3AF' : '#6B7280' }}>Let's make our city better together</Text>
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Camera')} style={styles.bigBtn}>
+        <TouchableOpacity onPress={() => navigation.navigate('SubmitComplaintDetails')} style={styles.bigBtn}>
           <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 }}>
             <PlusCircle size={32} color="white" />
           </View>

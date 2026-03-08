@@ -118,7 +118,7 @@ export default function HomeScreen({ navigation, onLogout, darkMode, toggleDarkM
           <Text style={{ color: darkMode ? '#9CA3AF' : '#6B7280' }}>Let's make our city better together</Text>
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('SubmitComplaintDetails')} style={styles.bigBtn}>
+        <TouchableOpacity onPress={() => navigation.navigate('Camera')} style={styles.bigBtn}>
           <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 }}>
             <PlusCircle size={32} color="white" />
           </View>

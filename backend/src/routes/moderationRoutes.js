@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const moderationController = require('../controllers/moderationController');
+// Get all users with strikes > 0 (offenders)
+router.get('/offenders', moderationController.getOffenders);
 
 // Admin routes for user moderation
 // Add strike to a user (admin only)

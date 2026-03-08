@@ -27,7 +27,7 @@ User.hasOne(Citizen, {
   },
   onDelete: 'CASCADE'
 });
-Citizen.belongsTo(User);
+Citizen.belongsTo(User, { as: 'user', foreignKey: 'UserFirebaseUid' });
 
 
 User.hasOne(Authority, {

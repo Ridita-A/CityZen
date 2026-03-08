@@ -1,4 +1,55 @@
-const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, ComplaintBump, sequelize, User, Citizen } = require('../models');
+// ADMIN ANALYTICS: Department performance
+exports.getDepartmentPerformanceStats = async (_req, res) => {
+  try {
+    const departments = await AuthorityCompany.findAll({ attributes: ['id', 'name', 'description'] });
+    const stats = await Promise.all(departments.map(async (dept) => {
+      const active = await Complaint.count({
+        include: [{ model: AuthorityCompany, where: { id: dept.id } }],
+        where: { currentStatus: { [Op.in]: ['pending', 'accepted', 'in_progress'] } }
+      });
+      const resolved = await Complaint.count({
+        include: [{ model: AuthorityCompany, where: { id: dept.id } }],
+        where: { currentStatus: 'resolved' }
+      });
+      const total = active + resolved;
+      let perf, color;
+      if (total > 0) {
+        perf = Math.round((resolved / total) * 100) + '%';
+        color = '#1E88E5';
+      } else {
+        perf = 'N/A';
+        color = '#9CA3AF';
+      }
+      return {
+        id: dept.id,
+        name: dept.name,
+        active,
+        resolved,
+        perf,
+        color,
+      };
+    }));
+    res.json(stats);
+  } catch (error) {
+    console.error('Get Department Performance Stats Error:', error.message);
+    res.status(500).json({ message: 'Server error while fetching department performance stats.' });
+  }
+};
+
+// ADMIN ANALYTICS: Category complaint counts
+exports.getCategoryStats = async (_req, res) => {
+  try {
+    const categories = await Category.findAll({ attributes: ['id', 'name'] });
+    const stats = await Promise.all(categories.map(async (cat) => {
+      const complaintCount = await Complaint.count({ where: { categoryId: cat.id } });
+      return { id: cat.id, name: cat.name, complaintCount };
+    }));
+    res.json(stats);
+  } catch (error) {
+    console.error('Get Category Stats Error:', error.message);
+    res.status(500).json({ message: 'Server error while fetching category stats.' });
+  }
+};
 // DEPARTMENT PERFORMANCE STATS
 exports.getDepartmentPerformanceStats = async (_req, res) => {
   try {
@@ -85,7 +136,7 @@ exports.updateCategoryDepartments = async (req, res) => {
     res.status(500).json({ message: 'Server error while updating category departments.' });
   }
 };
-const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, sequelize, User, Citizen } = require('../models');
+const { Complaint, Category, ComplaintImages, AuthorityCompany, ComplaintAssignment, Upvote, ComplaintReport, ComplaintBump, sequelize, User, Citizen } = require('../models');
 const { Op } = require('sequelize');
 const supabase = require('../config/supabase'); // Import Supabase client
 const axios = require('axios');

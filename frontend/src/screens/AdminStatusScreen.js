@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Activity, ShieldAlert, Clock, AlertTriangle, Scale, ArrowLeft } from 'lucide-react-native';
 import api from '../services/api';
-
+import { useNavigation } from '@react-navigation/native';
 
 export default function AdminStatusScreen({ darkMode, onJump }) {
   const [departments, setDepartments] = useState([]);
@@ -76,6 +76,8 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
     setView('detail');
   };
 
+  const navigation = useNavigation();
+
   if (view === 'detail' && kpiDetails) {
     return (
       <DetailScreen
@@ -89,7 +91,23 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
 
   return (
     <ScrollView contentContainerStyle={styles.padding}>
-      <Text style={[styles.title, darkMode && { color: 'white' }]}>Command Center</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Text style={[styles.title, darkMode && { color: 'white' }]}>Command Center</Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#1E88E5',
+            borderRadius: 8,
+            paddingVertical: 6,
+            paddingHorizontal: 14,
+            marginLeft: 10,
+            alignItems: 'center',
+            flexDirection: 'row',
+          }}
+          onPress={() => navigation.navigate('AdminAnalytics')}
+        >
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>View Analytics</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.kpiGrid}>
         <KPIBox
@@ -169,6 +187,8 @@ export default function AdminStatusScreen({ darkMode, onJump }) {
           ))
         )}
       </View>
+
+      // ...existing code...
     </ScrollView>
   );
 }

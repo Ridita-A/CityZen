@@ -22,19 +22,40 @@ export default function AdminSystemScreen({ darkMode }) {
   const [newArea, setNewArea] = useState({ name: '', latitude: '', longitude: '', radius: '' });
   const [editingAreaIndex, setEditingAreaIndex] = useState(null); // index of area being edited
   
-  // Anonymous Data with Strikes
-  const [offenders] = useState([
-    { id: 'User 202', strikes: 4, last: 'Graphic Content' },
-    { id: 'User 551', strikes: 1, last: 'Spam' }
-  ]);
-  const [bannedUsers, setBannedUsers] = useState([
-    { id: 'User 001', reason: 'Abusive Language', date: 'Dec 20' }
-  ]);
+  // Dynamic Offenders and Banned Users
+  const [offenders, setOffenders] = useState([]);
+  const [bannedUsers, setBannedUsers] = useState([]);
+  // Fetch offenders and banned users
+  const fetchOffenders = async () => {
+    try {
+      // Use correct API path
+      const res = await api.get('/moderation/offenders');
+      setOffenders(res.data || []);
+    } catch (error) {
+      setOffenders([]);
+    }
+  };
+
+  const fetchBannedUsers = async () => {
+    try {
+      const res = await api.get('/moderation/banned-users');
+      // Some endpoints return { bannedUsers: [...] }
+      setBannedUsers(res.data?.bannedUsers || res.data || []);
+    } catch (error) {
+      setBannedUsers([]);
+    }
+  };
+
 
   useEffect(() => {
     const bootstrap = async () => {
       setLoading(true);
-      await Promise.all([fetchCategories(), fetchDepartments()]);
+      await Promise.all([
+        fetchCategories(),
+        fetchDepartments(),
+        fetchOffenders(),
+        fetchBannedUsers()
+      ]);
       setLoading(false);
     };
     bootstrap();
@@ -215,10 +236,31 @@ export default function AdminSystemScreen({ darkMode }) {
     }
   };
 
-  const handleLiftBan = (id) => {
+  const handleLiftBan = async (id) => {
     Alert.alert("Lift Ban", `Unban ${id}?`, [
       { text: "Cancel" },
-      { text: "Lift Ban", onPress: () => setBannedUsers(bannedUsers.filter(u => u.id !== id)) }
+      { text: "Lift Ban", onPress: async () => {
+        try {
+          await api.post(`/admin/unban-user`, { id });
+          await fetchBannedUsers();
+        } catch (error) {
+          Alert.alert('Error', 'Failed to lift ban.');
+        }
+      } }
+    ]);
+  };
+
+  const handleLiftStrikes = async (id) => {
+    Alert.alert("Reset Strikes", `Reset all strikes for ${id}?`, [
+      { text: "Cancel" },
+      { text: "Reset", onPress: async () => {
+        try {
+          await api.post(`/admin/reset-strikes`, { id });
+          await fetchOffenders();
+        } catch (error) {
+          Alert.alert('Error', 'Failed to reset strikes.');
+        }
+      } }
     ]);
   };
 
@@ -532,25 +574,50 @@ export default function AdminSystemScreen({ darkMode }) {
 
   if (view === 'bans') return (
     <ScrollView style={styles.container}>
-      <SubHeader title="Ban Analytics" />
-      <Text style={styles.sectionLabel}>Frequent Violators (Anonymous)</Text>
-      {offenders.map(user => (
-        <View key={user.id} style={[styles.offenderCard, darkMode && styles.cardDark]}>
-          <View style={styles.offRow}>
-            <View><Text style={[styles.offId, darkMode && {color: 'white'}]}>{user.id}</Text><Text style={styles.offSub}>Last: {user.last}</Text></View>
-            <View style={{alignItems: 'flex-end'}}>
-              <Text style={[styles.strikeText, {color: user.strikes >= 4 ? '#EF4444' : '#F59E0B'}]}>{user.strikes}/5 Strikes</Text>
-              <View style={styles.barBase}><View style={[styles.barFill, {width: `${(user.strikes/5)*100}%`, backgroundColor: user.strikes >= 4 ? '#EF4444' : '#F59E0B'}]} /></View>
+      <SubHeader title="User Strikes & Bans" />
+      <Text style={styles.sectionLabel}>Users with Strikes</Text>
+      {offenders.length === 0 && (
+        <Text style={[styles.emptyText, darkMode && {color: 'white'}]}>No users with strikes.</Text>
+      )}
+      {offenders.map(user => {
+        const strikesLeft = 5 - user.strikes;
+        return (
+          <View key={user.uid} style={[styles.offenderCard, darkMode && styles.cardDark]}>
+            <View style={styles.offRow}>
+              <View>
+                <Text style={[styles.offId, darkMode && {color: 'white'}]}>{user.email || user.uid}</Text>
+                <Text style={styles.offSub}>Strikes: {user.strikes} / 5</Text>
+                <Text style={styles.offSub}>
+                  {strikesLeft > 0
+                    ? `${strikesLeft} strike${strikesLeft === 1 ? '' : 's'} left before ban`
+                    : 'Should be banned'}
+                </Text>
+              </View>
+              <View style={{alignItems: 'flex-end'}}>
+                <Text style={[styles.strikeText, {color: user.strikes >= 4 ? '#EF4444' : '#F59E0B'}]}>{user.strikes}/5 Strikes</Text>
+                <View style={styles.barBase}><View style={[styles.barFill, {width: `${(user.strikes/5)*100}%`, backgroundColor: user.strikes >= 4 ? '#EF4444' : '#F59E0B'}]} /></View>
+                <TouchableOpacity style={[styles.liftBtn, {marginTop: 6}]} onPress={() => handleLiftStrikes(user.uid)}>
+                  <UserCheck size={16} color="#059669" />
+                  <Text style={styles.liftText}>Reset Strikes</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
 
-      <Text style={[styles.sectionLabel, {marginTop: 30}]}>Active Bans</Text>
+      <Text style={[styles.sectionLabel, {marginTop: 30}]}>Banned Users</Text>
+      {bannedUsers.length === 0 && (
+        <Text style={[styles.emptyText, darkMode && {color: 'white'}]}>No banned users.</Text>
+      )}
       {bannedUsers.map(user => (
-        <View key={user.id} style={[styles.listItem, darkMode && styles.cardDark]}>
-          <View><Text style={[styles.itemText, darkMode && {color: 'white'}]}>{user.id}</Text><Text style={styles.offSub}>{user.reason}</Text></View>
-          <TouchableOpacity style={styles.liftBtn} onPress={() => handleLiftBan(user.id)}><UserCheck size={16} color="#059669" /><Text style={styles.liftText}>Lift</Text></TouchableOpacity>
+        <View key={user.uid} style={[styles.listItem, darkMode && styles.cardDark]}>
+          <View>
+            <Text style={[styles.itemText, darkMode && {color: 'white'}]}>{user.email || user.uid}</Text>
+            <Text style={styles.offSub}>{user.banReason || 'Banned'}</Text>
+            <Text style={styles.offSub}>Strikes: {user.strikes} / 5</Text>
+          </View>
+          <TouchableOpacity style={styles.liftBtn} onPress={() => handleLiftBan(user.uid)}><UserCheck size={16} color="#059669" /><Text style={styles.liftText}>Lift</Text></TouchableOpacity>
         </View>
       ))}
     </ScrollView>
@@ -589,7 +656,7 @@ const styles = StyleSheet.create({
   offId: { fontWeight: 'bold' },
   offSub: { fontSize: 11, color: '#9CA3AF' },
   strikeText: { fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  barBase: { width: 60, height: 5, backgroundColor: '#F3F4F6', borderRadius: 3 },
+  barBase: { width: 100, height: 5, backgroundColor: '#F3F4F6', borderRadius: 3 },
   barFill: { height: '100%', borderRadius: 3 },
   liftBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   liftText: { color: '#059669', fontSize: 11, fontWeight: 'bold', marginLeft: 5 },

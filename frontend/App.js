@@ -63,6 +63,7 @@ import OfflineGalleryScreen from './src/screens/OfflineGalleryScreen';
 import DraftComplaintSubmitScreen from './src/screens/DraftComplaintSubmitScreen';
 import DraftSubmittedScreen from './src/screens/DraftSubmittedScreen';
 import AdminCategoryRequestDetailsScreen from './src/screens/AdminCategoryRequestDetailsScreen';
+import AdminAnalyticsScreen from './src/screens/AdminAnalyticsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -139,6 +140,7 @@ export default function App() {
             <Stack.Screen name="AdminCategoryRequestDetails">{(props) => <AdminCategoryRequestDetailsScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="AddEvidence">{(props) => <AddEvidenceScreen {...props} />}</Stack.Screen>
             <Stack.Screen name="OfflineGallery">{(props) => <OfflineGalleryScreen {...props} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}</Stack.Screen>
+            <Stack.Screen name="AdminAnalytics">{(props) => <AdminAnalyticsScreen {...props} darkMode={darkMode} />}</Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
       </NotificationProvider>

@@ -1,9 +1,13 @@
-// backend/src/routes/complaintRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const complaintController = require('../controllers/complaintController');
 const multer = require('multer'); // Import multer
 const upload = multer({ storage: multer.memoryStorage() }); // Configure multer for memory storage
+
+// Admin analytics: department and category stats
+router.get('/departments/performance', complaintController.getDepartmentPerformanceStats);
+router.get('/categories/stats', complaintController.getCategoryStats);
 
 // Create complaint with images
 router.post('/complaints', upload.array('images'), complaintController.createComplaint);
